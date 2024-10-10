@@ -10,6 +10,7 @@ from datasets import load_dataset
 from openai import OpenAI, OpenAIError
 from tqdm import tqdm
 import spacy
+from dotenv import load_dotenv
 
 # Initialize logging
 logging.basicConfig(
@@ -30,9 +31,10 @@ except OSError:
     import subprocess
     subprocess.run(["python", "-m", "spacy", "download", "en_core_web_sm"])
     nlp = spacy.load("en_core_web_sm")
+load_dotenv('.env.local')
 
 # Initialize OpenAI client
-openai_api_key = os.getenv('OPENAI_API_KEY')
+openai_api_key = os.getenv('OPENAI_KEY')
 if not openai_api_key:
     logger.error("OPENAI_API_KEY environment variable not set.")
     exit(1)
@@ -125,23 +127,37 @@ def generate_dialogue(service, prompt, min_turns, max_turns, max_retries=3):
             f"You are an expert dialogue generator for the '{service}' service. "
             f"Create a high-quality, coherent, and relevant dialogue between a user and an assistant. "
             f"The dialogue should have between {min_turns} and {max_turns} turns (a turn is one user message and one assistant response). "
-            f"The dialogue should not be the same as any existing dialogues and should be better and more engaging."
+            f"The dialogue should not be the same as any existing dialogues and should be better and more engaging.\n\n"
+            f"Please format the dialogue as follows, with each user message starting with 'User:' and each assistant response starting with 'Assistant:'.\n"
+            f"Example:\n"
+            f"User: Hello!\n"
+            f"Assistant: Hi there! How can I assist you today?\n"
         )
 
         for attempt in range(1, max_retries + 1):
             try:
                 response = client.chat.completions.create(
-                    model='gpt-4o-mini',  # Corrected model name
+                    model='gpt-4o-mini',  # Ensure the correct model name is used
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": prompt}
                     ],
-                    max_tokens=1000,
-                    temperature=0.7,
+                    max_tokens=1500,  # Increased tokens to accommodate longer dialogues
+                    temperature=1.3,
                     n=1,
                 )
                 generated_dialogue = response.choices[0].message.content.strip()
-                return generated_dialogue
+                
+                # Check if the generated dialogue contains at least one turn
+                if re.search(r'^(User:|Assistant:)', generated_dialogue, re.MULTILINE):
+                    return generated_dialogue
+                else:
+                    logger.warning(f"Attempt {attempt} - Generated dialogue does not contain expected speaker labels.")
+                    if attempt < max_retries:
+                        sleep(2 ** attempt)  # Exponential backoff
+                    else:
+                        logger.error(f"Failed to generate properly formatted dialogue after {max_retries} attempts.")
+                        return None
             except OpenAIError as e:
                 logger.warning(f"Attempt {attempt} - OpenAI API error: {e}")
                 if attempt < max_retries:
@@ -152,7 +168,6 @@ def generate_dialogue(service, prompt, min_turns, max_turns, max_retries=3):
     except Exception as e:
         logger.error(f"Unexpected error in generate_dialogue: {e}")
         return None
-
 def process_generated_dialogue(generated_dialogue: str) -> List[Dict]:
     """
     Processes the generated dialogue text into a list of turns.
@@ -209,7 +224,7 @@ def main():
     # To ensure uniqueness, load existing dialogues if the output file exists
     if os.path.exists(output_file):
         try:
-            with open(output_file, 'r') as f:
+            with open(output_file, 'r',encoding='utf-8') as f:
                 existing_dialogues = json.load(f)
                 existing_ids = {dialogue['dialogue_id'] for dialogue in existing_dialogues}
             logger.info(f"Loaded {len(existing_dialogues)} existing dialogues from '{output_file}'.")
@@ -269,11 +284,11 @@ def main():
     # Save the new dialogues to a JSON file
     try:
         with open(output_file, 'w') as f:
-            json.dump(all_dialogues, f, indent=4)
+            json.dump(all_dialogues, f, indent=4,ensure_ascii=False)
         logger.info(f"Generated dialogues saved to '{output_file}'. Total dialogues: {len(all_dialogues)}.")
     except Exception as e:
         logger.error(f"Failed to save dialogues to '{output_file}': {e}")
 
 if __name__ == "__main__":
     main()
-#python generate_dialogues.py --num_generations 50 --min_turns 3 --max_turns 7 --output_file my_generated_dialogues.json
+#python capstone.py --num_generations 10 --min_turns 3 --max_turns 7 --output_file my_generated_dialogues.json
