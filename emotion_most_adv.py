@@ -233,7 +233,7 @@ def generate_dialogue(service, prompt, min_turns, max_turns,
         for attempt in range(1, max_retries + 1):
             try:
                 response = client.chat.completions.create(
-                    model='gpt-4',  # Ensure the correct model name is used
+                    model='gpt-4o-mini',  # Ensure the correct model name is used
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": prompt}
