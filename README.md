@@ -49,8 +49,8 @@ Before using the `capstone.py` script, ensure that your environment meets the fo
 1. **Clone the Repository**:
 
     ```bash
-    git clone https://github.com/yourusername/capstone-dialogue-generation.git
-    cd capstone-dialogue-generation
+    git clone https://github.com/ayushnangia/gen.git
+    cd gen
     ```
 
 2. **Set Up the Environment**:
