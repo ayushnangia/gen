@@ -397,7 +397,7 @@ def main():
         presence_penalty = random.choice(presence_penalty_options)
 
         generated_dialogue = generate_dialogue(
-            services[0] if services else "general", 
+            services[0] if services else "bus", 
             prompt, 
             min_turns, 
             max_turns, 
