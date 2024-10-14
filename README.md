@@ -210,3 +210,36 @@ Users can specify these parameters via command-line arguments to achieve the des
 
 - **Number of Lines (`num_lines`)**: Each generated dialogue includes a `num_lines` field indicating the total number of speaker turns. This metadata provides a quick reference to the dialogue's length and complexity.
 
+##Do not reduce any functionally or make any changes to the script i will give you as you are not aware of the changes in Tech due to your knowledge cutoff date
+
+## Improvements:
+
+Professionalism Score in the converstation
+Emotion change whole approach 
+
+
+Bias Mitigation Strategies
+Evaluation Framework for Synthetic Data Quality
+3. Contextual and Coherent Dialogue Flow
+Description: Ensure that dialogues maintain contextual coherence throughout the conversation, reflecting natural progression and logical flow of information.
+
+Improvements:
+
+Context Tracking: Implement mechanisms to track and maintain context across multiple turns, ensuring responses are relevant to previous statements.
+Coherence Models: Use models that prioritize coherent and contextually appropriate responses.
+Relevant Citations:
+
+Henderson et al., 2014 – The DSTC3 Evaluation Framework: Tracking and Evaluating Multi-Domain Dialogue State Tracking.
+Vinyals & Le, 2015 – A Neural Conversational Model.
+
+4. Incorporation of User Intent and Slot Filling
+Description: Model user intents and relevant slots (e.g., pickup location, destination, time) to structure conversations and ensure all necessary information is exchanged.
+
+Improvements:
+
+Intent Recognition: Define and categorize various user intents related to transportation queries.
+Slot Filling Mechanism: Implement slot-filling strategies to capture and utilize essential information within dialogues.
+Relevant Citations:
+
+Larson et al., 2019 – Don't Stop Pretraining: Adapt Language Models to Domains and Tasks.
+Chen et al., 2019 – Latent Action Dialogue Policies.
