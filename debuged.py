@@ -1,7 +1,6 @@
 import os
 import json
 import random
-import re
 import argparse
 import logging
 from time import sleep
@@ -15,7 +14,7 @@ import hashlib
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
-from transformers import pipeline
+import re  # Added import for regex operations
 
 # Initialize logging
 logging.basicConfig(
@@ -54,21 +53,19 @@ except Exception as e:
     logger.error(f"Failed to load SentenceTransformer model: {e}")
     exit(1)
 
-# Initialize Emotion Classification Pipeline
-try:
-    emotion_classifier = pipeline("text-classification", model="bhadresh-savani/distilbert-base-uncased-emotion", return_all_scores=True)
-except Exception as e:
-    logger.error(f"Failed to load Emotion Classification model: {e}")
-    exit(1)
+# Define separate emotion lists for User and Assistant
+USER_EMOTION_LIST = [
+    "Frustration", "Confusion", "Gratitude", "Impatience", "Disappointment",
+    "Relief", "Annoyance", "Appreciation", "Curiosity", "Urgency",
+    "Hesitation", "Hopefulness", "Satisfaction", "Concern", "Suspicion",
+    "Irritation", "Interest", "Indifference", "Acceptance", "Disbelief"
+]
 
-# Define a list of 32 distinct emotions based on GoEmotions and Plutchik's taxonomy
-EMOTION_LIST = [
-    "Admiration", "Amusement", "Anger", "Annoyance", "Approval", "Caring",
-    "Confusion", "Curiosity", "Desire", "Disappointment", "Disgust",
-    "Embarrassment", "Excitement", "Fear", "Gratitude", "Grief",
-    "Joy", "Love", "Nervousness", "Optimism", "Pride",
-    "Realization", "Relief", "Remorse", "Sadness", "Surprise",
-    "Elation", "Contentment", "Terror", "Envy", "Jealousy", "Boredom"
+ASSISTANT_EMOTION_LIST = [
+    "Empathy", "Politeness", "Reassurance", "Understanding", "Patience",
+    "Sympathy", "Encouragement", "Clarification", "Helpfulness", "Professionalism",
+    "Confidence", "Calmness", "Supportiveness", "Attentiveness",
+    "Apologetic", "Proactive", "Respectfulness", "Neutrality", "Cheerfulness"
 ]
 
 # *** Scenario Diversification: Define various dialogue scenarios ***
@@ -84,6 +81,21 @@ SCENARIO_CATEGORIES = [
     "issue reporting",
     "assistance seeking",
     "personal details update"
+]
+
+# *** Predefined List of Regions ***
+PREDEFINED_REGIONS = [
+    "Tokyo", "Delhi", "Shanghai", "Sao Paulo", "Mumbai",
+    "Beijing", "Cairo", "Mexico City", "Dhaka", "Osaka",
+    "Karachi", "Chongqing", "Istanbul", "Buenos Aires", "Kolkata",
+    "Kinshasa", "Lagos", "Manila", "Rio de Janeiro", "Guangzhou",
+    "Los Angeles", "Moscow", "Paris", "Bangkok", "Jakarta",
+    "London", "Lima", "New York", "Shenzhen", "Bangalore",
+    "Ho Chi Minh City", "Hyderabad", "Bogota", "Tianjin", "Santiago",
+    "Sydney", "Berlin", "Madrid", "Toronto", "Johannesburg",
+    "Dubai", "Singapore", "Tehran", "Baghdad", "Riyadh",
+    "Rome", "Cape Town", "Lagos", "Casablanca", "Barcelona",
+    "Seoul", "Melbourne", "Copenhagen", "Zurich", "Kuala Lumpur"
 ]
 
 def anonymize_text(text: str) -> str:
@@ -219,49 +231,39 @@ def is_unique(conversation_embedding: np.ndarray, existing_embeddings: np.ndarra
         return False
     return True
 
-def assign_emotions(turns: List[Dict], selected_emotions: List[str]) -> List[Dict]:
+def assign_selected_emotions(turns: List[Dict], user_emotions: List[str], assistant_emotions: List[str]) -> List[Dict]:
     """
-    Assigns emotions to each turn in the dialogue using an emotion classification model.
-    Ensures that the emotions are among the selected emotions for the dialogue.
+    Assigns emotions to each turn in the dialogue based on the speaker.
     """
     for turn in turns:
-        utterance = turn['utterance']
-        try:
-            # Get emotion scores
-            emotions = emotion_classifier(utterance)
-            # Filter emotions to only include selected emotions
-            filtered_emotions = [em for em in emotions[0] if em['label'] in selected_emotions]
-            if not filtered_emotions:
-                # If no selected emotions are detected, assign a random selected emotion
-                primary_emotion = random.choice(selected_emotions)
-            else:
-                # Select the emotion with the highest score among the filtered emotions
-                primary_emotion = max(filtered_emotions, key=lambda x: x['score'])['label']
-            turn['emotion'] = primary_emotion
-        except Exception as e:
-            logger.error(f"Failed to assign emotion to utterance: '{utterance}'. Error: {e}")
-            turn['emotion'] = "UNKNOWN"
+        if turn['speaker'] == 'USER':
+            turn['emotion'] = random.choice(user_emotions)
+        elif turn['speaker'] == 'ASSISTANT':
+            turn['emotion'] = random.choice(assistant_emotions)
+        else:
+            turn['emotion'] = "NEUTRAL"  # Default emotion for unknown speakers
     return turns
 
-def generate_dynamic_scenario(category: str) -> str:
+def generate_dynamic_scenario(category: str, service: str) -> str:
     """
-    Generates a specific scenario based on the given category using OpenAI's API.
+    Generates a specific scenario based on the given category and service using OpenAI's API.
+    Ensures the scenario is relevant to the service and limited to 2-3 lines.
     """
     try:
         system_prompt = (
-            "You are a creative assistant tasked with generating specific travel-related scenarios. "
-            "Each scenario should be detailed and fall under the given category. "
-            "Provide one unique scenario for the category."
+            "You are a creative assistant tasked with generating specific scenarios relevant to the given category and service. "
+            "Each scenario should be detailed, pertinent to the provided service, and confined to 2-3 lines. "
+            "Provide one unique scenario for the category and service."
         )
-        user_prompt = f"Generate a detailed scenario for the category: {category}."
+        user_prompt = f"Generate a concise (2-3 lines) scenario for the category: '{category}' and service: '{service}'."
 
         response = client.chat.completions.create(
-            model='gpt-4',  # Use a capable model for better scenario generation
+            model='gpt-4o-mini',  # Corrected model name
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            max_tokens=100,
+            max_tokens=150,  # Increased tokens to accommodate instructions
             temperature=0.7,
             top_p=0.9,
             n=1,
@@ -269,32 +271,37 @@ def generate_dynamic_scenario(category: str) -> str:
         )
 
         scenario = response.choices[0].message.content.strip()
-        logger.info(f"Generated scenario for category '{category}': {scenario}")
+        logger.info(f"Generated scenario for category '{category}' and service '{service}': {scenario}")
         return scenario
 
     except OpenAIError as e:
-        logger.error(f"OpenAI API error during scenario generation for category '{category}': {e}")
+        logger.error(f"OpenAI API error during scenario generation for category '{category}' and service '{service}': {e}")
         return None
     except Exception as e:
-        logger.error(f"Unexpected error during scenario generation for category '{category}': {e}")
+        logger.error(f"Unexpected error during scenario generation for category '{category}' and service '{service}': {e}")
         return None
 
 def generate_dialogue(service, prompt, min_turns, max_turns, 
                      temperature=0.9, top_p=0.95, frequency_penalty=0.5, presence_penalty=0.5,
-                     max_retries=3, selected_emotions: List[str] = None, scenario: str = None):
+                     max_retries=3, user_emotions: List[str] = None, assistant_emotions: List[str] = None, 
+                     scenario: str = None, regions: List[str] = None):
     """
     Generates a dialogue using OpenAI's chat completions API with uniqueness checks.
     Allows dynamic parameter tuning for the API call.
     """
     try:
-        # Incorporate selected emotions and scenario into the system prompt
-        emotions_str = ' and '.join(selected_emotions) if selected_emotions else ""
-        scenario_str = f"The scenario is {scenario}." if scenario else ""
+        # Incorporate selected emotions, scenario, and regions into the system prompt
+        user_emotions_str = ' and '.join(user_emotions) if user_emotions else ""
+        assistant_emotions_str = ' and '.join(assistant_emotions) if assistant_emotions else ""
+        scenario_str = f"The scenario is: {scenario}" if scenario else ""
+        regions_str = f"The dialogue is set in the following region: {', '.join(regions)}." if regions else ""
         system_prompt = (
             f"You are an expert dialogue generator for the '{service}' service. "
-            f"{scenario_str} "
+            f"{scenario_str}. "
+            f"{regions_str} "
             f"Create a high-quality, coherent, and emotionally rich dialogue between a user and an assistant. "
-            f"The dialogue should express the following emotions: {emotions_str}. "
+            f"The user should express the following emotions: {user_emotions_str}. "
+            f"The assistant should express the following emotions: {assistant_emotions_str}. "
             f"The dialogue should have between {min_turns} and {max_turns} turns (a turn is one user message and one assistant response). "
             f"The dialogue should not be the same as any existing dialogues and should be better and more engaging. "
             f"Encourage diverse linguistic expressions and response styles to mimic real human interactions.\n\n"
@@ -307,7 +314,7 @@ def generate_dialogue(service, prompt, min_turns, max_turns,
         for attempt in range(1, max_retries + 1):
             try:
                 response = client.chat.completions.create(
-                    model='gpt-4', 
+                    model='gpt-4o-mini',  # Corrected model name
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": prompt}
@@ -447,6 +454,11 @@ def main():
         services = example.get('services', [])
         dialogue_id = example.get('dialogue_id', f"dialogue_{index}")
 
+        # *** Assign a Region from the Predefined List ***
+        assigned_region = random.choice(PREDEFINED_REGIONS)
+        logger.info(f"Assigned region for dialogue_id '{dialogue_id}': {assigned_region}")
+        regions = [assigned_region]  # List to hold regions; can be extended if needed
+
         # Extract and anonymize existing dialogue
         processed_dialogue = extract_and_anonymize_dialogue(example)
         base_conversation = generate_base_conversation(processed_dialogue)
@@ -458,17 +470,24 @@ def main():
             continue
 
         # *** Scenario Diversification: Dynamically generate a scenario for this dialogue ***
+        if services:
+            primary_service = services[0]
+        else:
+            primary_service = "general"  # Default service if none specified
+
         selected_category = random.choice(SCENARIO_CATEGORIES)
-        generated_scenario = generate_dynamic_scenario(selected_category)
+        generated_scenario = generate_dynamic_scenario(selected_category, primary_service)
         if not generated_scenario:
-            logger.warning(f"Could not generate scenario for category '{selected_category}'. Skipping dialogue_id '{dialogue_id}'.")
+            logger.warning(f"Could not generate scenario for category '{selected_category}' and service '{primary_service}'. Skipping dialogue_id '{dialogue_id}'.")
             continue
         logger.info(f"Selected category for dialogue_id '{dialogue_id}': {selected_category}")
         logger.info(f"Generated scenario for dialogue_id '{dialogue_id}': {generated_scenario}")
 
-        # Randomly select 2 emotions from the EMOTION_LIST
-        selected_emotions = random.sample(EMOTION_LIST, 2)
-        logger.info(f"Selected emotions for dialogue_id '{dialogue_id}': {selected_emotions}")
+        # Randomly select emotions from the respective emotion lists
+        selected_user_emotions = random.sample(USER_EMOTION_LIST, 1)
+        selected_assistant_emotions = random.sample(ASSISTANT_EMOTION_LIST, 1)
+        logger.info(f"Selected user emotions for dialogue_id '{dialogue_id}': {selected_user_emotions}")
+        logger.info(f"Selected assistant emotions for dialogue_id '{dialogue_id}': {selected_assistant_emotions}")
 
         prompt = (
             f"Using the following base conversation as a reference, create a new dialogue for the service(s): {', '.join(services)}. "
@@ -484,7 +503,7 @@ def main():
         presence_penalty = random.choice(presence_penalty_options)
 
         generated_dialogue = generate_dialogue(
-            services[0] if services else "bus", 
+            primary_service,  # Use the primary service
             prompt, 
             min_turns, 
             max_turns, 
@@ -492,16 +511,23 @@ def main():
             top_p=top_p, 
             frequency_penalty=frequency_penalty, 
             presence_penalty=presence_penalty,
-            selected_emotions=selected_emotions,  # Pass selected emotions to the dialogue generator
-            scenario=generated_scenario             # Pass generated scenario to the dialogue generator
+            user_emotions=selected_user_emotions,      # Pass selected user emotions to the dialogue generator
+            assistant_emotions=selected_assistant_emotions,  # Pass selected assistant emotions to the dialogue generator
+            scenario=generated_scenario,               # Pass generated scenario to the dialogue generator
+            regions=regions                            # Pass assigned regions to the dialogue generator
         )
 
         if generated_dialogue:
             generated_turns = process_generated_dialogue(generated_dialogue)
-            # Assign emotions to each turn based on selected emotions
-            generated_turns = assign_emotions(generated_turns, selected_emotions)
-            generated_conversation = generate_base_conversation(generated_turns)
-            generated_hash = hashlib.sha256(generated_conversation.encode('utf-8')).hexdigest()
+            # Assign emotions to each turn based on the speaker
+            generated_turns = assign_selected_emotions(generated_turns, selected_user_emotions, selected_assistant_emotions)
+            # Generate conversation text without including it in the JSON
+            # Commented out the following line to remove base_conversation
+            # generated_conversation = generate_base_conversation(generated_turns)
+            # Instead, we can create a simple concatenation or omit if not needed
+            # For hashing purposes, you might still need a representation
+            generated_conversation_text = "\n".join([f"{turn['speaker']}: {turn['utterance']}" for turn in generated_turns])
+            generated_hash = hashlib.sha256(generated_conversation_text.encode('utf-8')).hexdigest()
 
             if generated_hash in existing_hashes:
                 logger.warning(f"Generated dialogue is a duplicate for dialogue_id '{dialogue_id}'. Skipping.")
@@ -509,7 +535,7 @@ def main():
 
             # Generate embedding for the new conversation
             try:
-                conversation_embedding = embedding_model.encode(generated_conversation, convert_to_numpy=True).reshape(1, -1)
+                conversation_embedding = embedding_model.encode(generated_conversation_text, convert_to_numpy=True).reshape(1, -1)
             except Exception as e:
                 logger.error(f"Failed to generate embedding for dialogue_id '{dialogue_id}': {e}")
                 continue
@@ -534,11 +560,12 @@ def main():
                 'services': services,
                 'dialogue_id': new_dialogue_id,
                 'turns': generated_turns,
-                'base_conversation': generated_conversation,
                 'num_lines': num_lines,  # Added number of lines
-                'emotions': selected_emotions,  # Record the selected emotions
-                'scenario': selected_category,    # Record the selected category
-                'generated_scenario': generated_scenario  # Record the generated scenario
+                'user_emotions': selected_user_emotions,      # Record the selected user emotions
+                'assistant_emotions': selected_assistant_emotions,  # Record the selected assistant emotions
+                'scenario_category': selected_category,         # Record the selected category
+                'generated_scenario': generated_scenario,       # Record the generated scenario
+                'regions': regions                              # Added regions information
             })
             existing_ids.add(new_dialogue_id)
             existing_hashes.add(generated_hash)
@@ -569,3 +596,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

@@ -5,3 +5,10 @@ generated_dialogues.json
 dialogue_hashes.json
 dialogue_embeddings.npy
 dialogue_generation.log
+*.log
+*.npy
+*.whl
+*.json
+__pycache__
+local_datasets
+models
