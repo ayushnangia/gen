@@ -6,7 +6,7 @@ import random
 import logging
 from time import sleep
 from typing import List, Dict, Tuple
-from datasets import load_dataset, DatasetDict
+from datasets import load_from_disk, DatasetDict
 from openai import OpenAI, OpenAIError
 from tqdm import tqdm
 import spacy
@@ -18,6 +18,8 @@ import numpy as np
 import re
 import uuid
 import argparse
+from collections import defaultdict
+import ast
 
 
 class DialogueGenerator:
@@ -34,6 +36,12 @@ class DialogueGenerator:
         self.frequency_penalty_range = config.get('frequency_penalty_range', (0.0, 0.7))
         self.presence_penalty_range = config.get('presence_penalty_range', (0.0, 0.7))
         self.total_generations = config.get('total_generations', 10)
+        self.persona_dataset = self.load_persona_dataset()
+        self.cluster_dict = defaultdict(list)
+        self.summary_dict = defaultdict(list)
+        self.populate_persona_dicts()
+
+
 
         # Initialize logging
         logging.basicConfig(
@@ -127,6 +135,41 @@ class DialogueGenerator:
         self.existing_ids = self.load_existing_dialogues()
         self.existing_hashes = self.load_existing_hashes()
         self.existing_embeddings = self.load_existing_embeddings()
+    def load_persona_dataset(self):
+        dataset_path = './local_datasets/FinePersonas-v0.1-clustering-100k'
+        dataset = load_from_disk(dataset_path)
+        return dataset[list(dataset.keys())[0]]  
+    def safe_eval(self, s):
+        try:
+            return ast.literal_eval(s)
+        except (ValueError, SyntaxError):
+            return []
+
+    def get_summary_labels(self, label):
+        labels = self.safe_eval(label)
+        if isinstance(labels, list):
+            return tuple(sorted(labels))
+        elif isinstance(labels, str):
+            return (label,)
+        return tuple()
+
+    def populate_persona_dicts(self):
+        for i, (cluster, summary) in enumerate(zip(self.persona_dataset['cluster_label'], self.persona_dataset['summary_label'])):
+            self.cluster_dict[cluster].append(i)
+            summary_labels = self.get_summary_labels(summary)
+            self.summary_dict[summary_labels].append(i)
+
+    def select_random_persona(self):
+        if random.choice([True, False]):
+            # Cluster-based selection
+            cluster = random.choice(list(self.cluster_dict.keys()))
+            index = random.choice(self.cluster_dict[cluster])
+        else:
+            # Summary-based selection
+            summary = random.choice(list(self.summary_dict.keys()))
+            index = random.choice(self.summary_dict[summary])
+
+        return self.persona_dataset[index]['persona']
 
     def load_dataset(self) -> any:
         """
@@ -284,11 +327,14 @@ class DialogueGenerator:
         Ensures the scenario is relevant to the service and limited to 2-3 lines.
         """
         try:
+            user_persona = self.select_random_persona()
+            self.logger.info(f"Selected persona: {user_persona}")
             system_prompt = (
                 "You are a creative assistant tasked with generating specific scenarios relevant to the given category and service. "
                 "Each scenario should be detailed, pertinent to the provided service, and confined to 2-3 lines. "
-                "Provide one unique scenario for the category and service."
+                f"Provide one unique scenario for the category and service from the perspective of the persona: {user_persona}."
             )
+
             user_prompt = f"Generate a concise (2-3 lines) scenario for the category: '{category}' and transport service: '{service}'.\nPlease ensure that the transport service is always kept in mind."
 
             response = self.client.chat.completions.create(
