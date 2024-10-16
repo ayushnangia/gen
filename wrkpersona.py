@@ -392,7 +392,7 @@ class DialogueGenerator:
                 f"User: Hello!\n"
                 f"Assistant: Hi there! How can I assist you today?\n"
             )
-
+            self.logger.info(f"System prompt: {system_prompt}")
             for attempt in range(1, max_retries + 1):
                 try:
                     response = self.client.chat.completions.create(
