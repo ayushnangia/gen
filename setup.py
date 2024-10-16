@@ -27,7 +27,13 @@ def download_sentence_transformer(model_name='all-MiniLM-L6-v2', save_path='./mo
 def download_and_save_dataset(dataset_name, save_path):
     """
     Downloads a dataset from Hugging Face and saves it locally.
+    If the dataset already exists at the specified path, it skips the download.
     """
+    if os.path.exists(save_path):
+        print(f"Dataset already exists at: {save_path}")
+        print("Skipping download.")
+        return
+
     print(f"Downloading dataset: {dataset_name}")
     dataset = load_dataset(dataset_name, download_mode="force_redownload")
     
@@ -72,3 +78,4 @@ def parse_arguments():
 if __name__ == "__main__":
     args = parse_arguments()
     setup_environment(args.model_name, args.model_path, args.dataset_name, args.dataset_path)
+    download_and_save_dataset("argilla/FinePersonas-v0.1-clustering-100k","./local_datasets/FinePersonas-v0.1-clustering-100k")

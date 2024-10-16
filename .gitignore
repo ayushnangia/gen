@@ -12,3 +12,4 @@ dialogue_generation.log
 __pycache__
 local_datasets
 models
+*.zip
