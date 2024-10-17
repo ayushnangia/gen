@@ -81,6 +81,15 @@ class DialogueGenerator:
         except Exception as e:
             self.logger.error(f"Failed to load SentenceTransformer model: {e}")
             raise e
+        self.travel_time_slots = [
+            "Early Morning (5 AM - 8 AM)",
+            "Late Morning (9 AM - 11 AM)",
+            "Afternoon (12 PM - 4 PM)",
+            "Evening (5 PM - 8 PM)",
+            "Late Night (9 PM - 12 AM)",
+            "Overnight (12 AM - 5 AM)"
+        ]
+
 
         # Define emotion lists
         self.USER_EMOTION_LIST = [
@@ -312,15 +321,7 @@ class DialogueGenerator:
         """
         Assigns emotions to each turn in the dialogue based on the speaker.
         """
-        for turn in turns:
-            if turn['speaker'] == 'USER':
-                turn['emotion'] = random.choice(user_emotions)
-            elif turn['speaker'] == 'ASSISTANT':
-                turn['emotion'] = random.choice(assistant_emotions)
-            else:
-                turn['emotion'] = "NEUTRAL"  # Default emotion for unknown speakers
         return turns
-
     def generate_dynamic_scenario(self, category: str, service: str) -> str:
         """
         Generates a specific scenario based on the given category and service using OpenAI's API.
@@ -328,38 +329,46 @@ class DialogueGenerator:
         """
         try:
             user_persona = self.select_random_persona()
+            selected_time_slot = random.choice(self.travel_time_slots)
             self.logger.info(f"Selected persona: {user_persona}")
+            self.logger.info(f"Selected time slot: {selected_time_slot}")
+            
             system_prompt = (
                 "You are a creative assistant tasked with generating specific scenarios relevant to the given category and service. "
                 "Each scenario should be detailed, pertinent to the provided service, and confined to 2-3 lines. "
-                f"Provide one unique scenario for the category and service from the perspective of the persona: {user_persona}."
+                f"Provide one unique scenario for the category and service from the perspective of the persona: {user_persona}. "
+                f"Pick a random time from the following time slot: {selected_time_slot}."
             )
 
-            user_prompt = f"Generate a concise (2-3 lines) scenario for the category: '{category}' and transport service: '{service}'.\nPlease ensure that the transport service is always kept in mind."
+            user_prompt = (
+                f"Generate a concise (2-3 lines) scenario for the category: '{category}' and transport service: '{service}'. "
+                f"The scenario should occur during the {selected_time_slot} time slot. "
+                "Please ensure that the transport service and time slot are always kept in mind."
+            )
 
             response = self.client.chat.completions.create(
-                model='gpt-4o-mini',  # Corrected model name
+                model='gpt-4o-mini',
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                max_tokens=150,  # Increased tokens to accommodate instructions
+                max_tokens=150,
                 temperature=0.7,
                 top_p=0.9,
                 n=1,
                 stop=None,
             )
-
             scenario = response.choices[0].message.content.strip()
             self.logger.info(f"Generated scenario for category '{category}' and service '{service}': {scenario}")
-            return scenario
+            return scenario, selected_time_slot
 
         except OpenAIError as e:
             self.logger.error(f"OpenAI API error during scenario generation for category '{category}' and service '{service}': {e}")
-            return None
+            return None, None
         except Exception as e:
             self.logger.error(f"Unexpected error during scenario generation for category '{category}' and service '{service}': {e}")
-            return None
+            return None, None
+
 
     def generate_dialogue(self, service: str, prompt: str, min_turns: int, max_turns: int, 
                          temperature: float = 0.9, top_p: float = 0.95, frequency_penalty: float = 0.5, presence_penalty: float = 0.5,
@@ -387,12 +396,16 @@ class DialogueGenerator:
                 f"Make sure that these dialogues are representative of conversations between a text/voice interface hence the assistant might not be present. "
                 f"These dialogues should encompass and showcase different scenarios and outcomes in a strictly transport service setting. "
                 f"Encourage diverse linguistic expressions and response styles to mimic real human interactions.\n\n"
-                f"Please format the dialogue as follows, with each user message starting with 'User:' and each assistant response starting with 'Assistant:'.\n"
-                f"Example:\n"
-                f"User: Hello!\n"
-                f"Assistant: Hi there! How can I assist you today?\n"
+                f"For each turn, provide an intent classification for the user's message. "
+                f"Use the following format for each turn:\n"
+                f"<User> user's message </User>\n"
+                f"<Intent> intent classification </Intent>\n"
+                f"<Assistant> assistant's response </Assistant>\n"
             )
 
+            # self.logger.info(f"System prompt: {system_prompt}")
+
+            # self.logger.info(f" prompt: {prompt}")
             for attempt in range(1, max_retries + 1):
                 try:
                     response = self.client.chat.completions.create(
@@ -411,8 +424,8 @@ class DialogueGenerator:
                     generated_dialogues = [choice.message.content.strip() for choice in response.choices]
 
                     for gen_dialogue in generated_dialogues:
-                        # Check if the dialogue contains expected speaker labels
-                        if re.search(r'^(User:|Assistant:)', gen_dialogue, re.MULTILINE):
+                        # Check if the dialogue contains the expected XML-like tags
+                        if re.search(r'<User>.*?</User>.*?<Intent>.*?</Intent>.*?<Assistant>.*?</Assistant>', gen_dialogue, re.DOTALL):
                             return gen_dialogue  # Return the first valid formatted dialogue
 
                     self.logger.warning(f"Attempt {attempt} - No valid dialogue found in generated completions.")
@@ -437,23 +450,33 @@ class DialogueGenerator:
         Processes the generated dialogue text into a list of turns.
         """
         generated_turns = []
-        for line in generated_dialogue.split('\n'):
-            line = line.strip()
-            if line:
-                if line.lower().startswith('user:'):
-                    speaker = 'USER'
-                    utterance = line.split(':', 1)[1].strip()
-                elif line.lower().startswith(('assistant:', 'system:', 'agent:')):
-                    speaker = 'ASSISTANT'
-                    utterance = line.split(':', 1)[1].strip()
-                else:
-                    continue
-                generated_turns.append({
-                    'speaker': speaker,
-                    'utterance': utterance
-                })
-        return generated_turns
+        current_turn = {}
+        
+        # Use regex to split the dialogue into turns
+        turn_pattern = re.compile(r'<User>(.*?)</User>\s*<Intent>(.*?)</Intent>\s*<Assistant>(.*?)</Assistant>', re.DOTALL)
+        turns = turn_pattern.findall(generated_dialogue)
+        
+        for user_message, intent, assistant_response in turns:
+            current_turn = {
+                'utterance': user_message.strip(),
+                'intent': intent.strip(),
+                'assistant_response': assistant_response.strip()
+            }
+            generated_turns.append(current_turn)
 
+        # Ensure each turn has both 'utterance' and 'assistant_response'
+        for turn in generated_turns:
+            if 'utterance' not in turn or not turn['utterance']:
+                turn['utterance'] = "N/A"
+                self.logger.warning("Added missing utterance in turn")
+            if 'assistant_response' not in turn or not turn['assistant_response']:
+                turn['assistant_response'] = "N/A"
+                self.logger.warning("Added missing assistant_response in turn")
+            if 'intent' not in turn or not turn['intent']:
+                turn['intent'] = "N/A"
+                self.logger.warning("Added missing intent in turn")
+
+        return generated_turns    
     def generate_unique_dialogues(self, num_generations: int, min_turns: int, max_turns: int,
                                   temperature_options: List[float], top_p_options: List[float],
                                   frequency_penalty_options: List[float], presence_penalty_options: List[float]) -> List[Dict]:
@@ -498,12 +521,13 @@ class DialogueGenerator:
             primary_service = services[0] if services else "bus"
 
             selected_category = random.choice(self.SCENARIO_CATEGORIES)
-            generated_scenario = self.generate_dynamic_scenario(selected_category, primary_service)
+            generated_scenario, selected_time_slot = self.generate_dynamic_scenario(selected_category, primary_service)
             if not generated_scenario:
                 self.logger.warning(f"Could not generate scenario for category '{selected_category}' and service '{primary_service}'. Skipping dialogue_id '{original_dialogue_id}'.")
                 continue
             self.logger.debug(f"Selected category for dialogue_id '{original_dialogue_id}': {selected_category}")
             self.logger.debug(f"Generated scenario for dialogue_id '{original_dialogue_id}': {generated_scenario}")
+            self.logger.debug(f"Selected time slot for dialogue_id '{original_dialogue_id}': {selected_time_slot}")
 
             # Randomly select emotions from the respective emotion lists
             selected_user_emotions = random.sample(self.USER_EMOTION_LIST, 1)
@@ -539,71 +563,82 @@ class DialogueGenerator:
                 regions=regions
             )
 
-            if generated_dialogue:
+            try:
+
                 generated_turns = self.process_generated_dialogue(generated_dialogue)
                 if not generated_turns:
                     self.logger.warning(f"No valid turns extracted from generated dialogue for dialogue_id '{original_dialogue_id}'. Skipping.")
                     continue
-
+            except Exception as e:
+                self.logger.error(f"Error processing generated dialogue for dialogue_id '{original_dialogue_id}': {e}")
+                continue
                 # Assign emotions to each turn based on the speaker
-                generated_turns = self.assign_selected_emotions(generated_turns, selected_user_emotions, selected_assistant_emotions)
-                # Generate conversation text without including it in the JSON
-                generated_conversation_text = "\n".join([f"{turn['speaker']}: {turn['utterance']}" for turn in generated_turns])
-                generated_hash = hashlib.sha256(generated_conversation_text.encode('utf-8')).hexdigest()
+            generated_turns = self.assign_selected_emotions(generated_turns, selected_user_emotions, selected_assistant_emotions)
 
-                if generated_hash in self.existing_hashes:
-                    self.logger.warning(f"Generated dialogue is a duplicate based on hash for dialogue_id '{original_dialogue_id}'. Skipping.")
-                    continue
+            # Generate conversation text without including it in the JSON
+            generated_conversation_text = "\n".join([
+                f"User: {turn['utterance']}\n"
+                f"Intent: {turn.get('intent', 'N/A')}\n"
+                f"Emotion: {turn.get('emotion', 'N/A')}\n"
+                f"Assistant: {turn.get('assistant_response', 'N/A')}"
+                for turn in generated_turns
+            ])
+            generated_hash = hashlib.sha256(generated_conversation_text.encode('utf-8')).hexdigest()
 
-                # Generate embedding for the new conversation
-                try:
-                    conversation_embedding = self.embedding_model.encode(generated_conversation_text, convert_to_numpy=True).reshape(1, -1)
-                except Exception as e:
-                    self.logger.error(f"Failed to generate embedding for dialogue_id '{original_dialogue_id}': {e}")
-                    continue
+            if generated_hash in self.existing_hashes:
+                self.logger.warning(f"Generated dialogue is a duplicate based on hash for dialogue_id '{original_dialogue_id}'. Skipping.")
+                continue
 
-                # Check for semantic uniqueness
-                if not self.is_unique(conversation_embedding):
-                    self.logger.warning(f"Generated dialogue is too similar to existing dialogues for dialogue_id '{original_dialogue_id}'. Skipping.")
-                    continue
+            # Generate embedding for the new conversation
+            try:
+                conversation_embedding = self.embedding_model.encode(generated_conversation_text, convert_to_numpy=True).reshape(1, -1)
+            except Exception as e:
+                self.logger.error(f"Failed to generate embedding for dialogue_id '{original_dialogue_id}': {e}")
+                continue
 
-                # Update existing_embeddings with the new embedding
-                if self.existing_embeddings.size:
-                    self.existing_embeddings = np.vstack([self.existing_embeddings, conversation_embedding])
-                else:
-                    self.existing_embeddings = conversation_embedding
+            # Check for semantic uniqueness
+            if not self.is_unique(conversation_embedding):
+                self.logger.warning(f"Generated dialogue is too similar to existing dialogues for dialogue_id '{original_dialogue_id}'. Skipping.")
+                continue
 
-                # Count number of lines in the conversation
-                num_lines = len(generated_turns)
+            # Update existing_embeddings with the new embedding
+            if self.existing_embeddings.size:
+                self.existing_embeddings = np.vstack([self.existing_embeddings, conversation_embedding])
+            else:
+                self.existing_embeddings = conversation_embedding
 
-                # **Generate a UUID-based dialogue_id**
+            # Count number of lines in the conversation
+            num_lines = len(generated_turns)
+
+            # **Generate a UUID-based dialogue_id**
+            unique_id = uuid.uuid4()
+            new_dialogue_id = f"{original_dialogue_id}_generated_{unique_id}"
+            # Although UUID collisions are highly unlikely, implement a check
+            while new_dialogue_id in self.existing_ids:
+                self.logger.warning(f"Duplicate dialogue_id '{new_dialogue_id}' found. Regenerating UUID.")
                 unique_id = uuid.uuid4()
                 new_dialogue_id = f"{original_dialogue_id}_generated_{unique_id}"
-                # Although UUID collisions are highly unlikely, implement a check
-                while new_dialogue_id in self.existing_ids:
-                    self.logger.warning(f"Duplicate dialogue_id '{new_dialogue_id}' found. Regenerating UUID.")
-                    unique_id = uuid.uuid4()
-                    new_dialogue_id = f"{original_dialogue_id}_generated_{unique_id}"
 
-                new_dialogues.append({
-                    'services': services,
-                    'dialogue_id': new_dialogue_id,
-                    'turns': generated_turns,
-                    'num_lines': num_lines,  # Added number of lines
-                    'user_emotions': selected_user_emotions,      # Record the selected user emotions
-                    'assistant_emotions': selected_assistant_emotions,  # Record the selected assistant emotions
-                    'scenario_category': selected_category,         # Record the selected category
-                    'generated_scenario': generated_scenario,       # Record the generated scenario
-                    'regions': regions                              # Added regions information
-                })
-                self.existing_ids.add(new_dialogue_id)
-                self.existing_hashes.add(generated_hash)
+            new_dialogues.append({
+                'services': services,
+                'dialogue_id': new_dialogue_id,
+                'turns': generated_turns,
+                'num_lines': num_lines,
+                'user_emotions': selected_user_emotions,
+                'assistant_emotions': selected_assistant_emotions,
+                'scenario_category': selected_category,
+                'generated_scenario': generated_scenario,
+                'time_slot': selected_time_slot,  # Add the selected time slot to the dialogue data
+                'regions': regions
+            })
+            self.existing_ids.add(new_dialogue_id)
+            self.existing_hashes.add(generated_hash)
 
-                # **Incremental Saving: Save in Batches**
-                if len(new_dialogues) >= 10000:
-                    self.save_new_dialogues(new_dialogues)
-                    self.logger.info(f"Saved a batch of {len(new_dialogues)} dialogues.")
-                    new_dialogues = []
+            # **Incremental Saving: Save in Batches**
+            if len(new_dialogues) >= 10000:
+                self.save_new_dialogues(new_dialogues)
+                self.logger.info(f"Saved a batch of {len(new_dialogues)} dialogues.")
+                new_dialogues = []
 
         # Save any remaining dialogues after the loop
         if new_dialogues:

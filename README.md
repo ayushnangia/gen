@@ -243,3 +243,24 @@ Relevant Citations:
 
 Larson et al., 2019 – Don't Stop Pretraining: Adapt Language Models to Domains and Tasks.
 Chen et al., 2019 – Latent Action Dialogue Policies.
+Here are the common transportation methods that can be booked or arranged via an app:
+
+### 1. **Land Transportation:**
+   - **Cars**: Ridesharing services (Uber, Lyft, Ola).
+   - **Taxis**: Traditional taxis via apps (Uber, Bolt, Grab).
+   - **Buses**: City buses and long-distance buses (FlixBus, RedBus).
+   - **Trains**: Rail services (IRCTC, Trainline, Amtrak).
+   - **Rental Cars**: Car rental services (Hertz, Zipcar).
+   - **Bicycles**: Bike-sharing services (CitiBike, LimeBike).
+
+### 2. **Air Transportation:**
+   - **Airplanes**: Flight booking apps (Skyscanner, Google Flights, Kayak).
+
+### 3. **Human-powered Transportation:**
+   - **Scooters**: Electric scooter rentals (Bird, Lime, Spin).
+   - **Bicycles**: Bike-sharing apps (CitiBike, Mobike).
+
+These are the most commonly used transportation methods that are accessible via popular apps.
+
+
+CONTEXT CUES AND TIME AND PLACEHOLDER AND BIAS

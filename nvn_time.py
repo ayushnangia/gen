@@ -81,6 +81,15 @@ class DialogueGenerator:
         except Exception as e:
             self.logger.error(f"Failed to load SentenceTransformer model: {e}")
             raise e
+        self.travel_time_slots = [
+            "Early Morning (5 AM - 8 AM)",
+            "Late Morning (9 AM - 11 AM)",
+            "Afternoon (12 PM - 4 PM)",
+            "Evening (5 PM - 8 PM)",
+            "Late Night (9 PM - 12 AM)",
+            "Overnight (12 AM - 5 AM)"
+        ]
+
 
         # Define emotion lists
         self.USER_EMOTION_LIST = [
@@ -328,38 +337,46 @@ class DialogueGenerator:
         """
         try:
             user_persona = self.select_random_persona()
+            selected_time_slot = random.choice(self.travel_time_slots)
             self.logger.info(f"Selected persona: {user_persona}")
+            self.logger.info(f"Selected time slot: {selected_time_slot}")
+            
             system_prompt = (
                 "You are a creative assistant tasked with generating specific scenarios relevant to the given category and service. "
                 "Each scenario should be detailed, pertinent to the provided service, and confined to 2-3 lines. "
-                f"Provide one unique scenario for the category and service from the perspective of the persona: {user_persona}."
+                f"Provide one unique scenario for the category and service from the perspective of the persona: {user_persona}. "
+                f"The scenario should take place during the following time slot: {selected_time_slot}."
             )
 
-            user_prompt = f"Generate a concise (2-3 lines) scenario for the category: '{category}' and transport service: '{service}'.\nPlease ensure that the transport service is always kept in mind."
+            user_prompt = (
+                f"Generate a concise (2-3 lines) scenario for the category: '{category}' and transport service: '{service}'. "
+                f"The scenario should occur during the {selected_time_slot} time slot. "
+                "Please ensure that the transport service and time slot are always kept in mind."
+            )
 
             response = self.client.chat.completions.create(
-                model='gpt-4o-mini',  # Corrected model name
+                model='gpt-4o-mini',
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                max_tokens=150,  # Increased tokens to accommodate instructions
+                max_tokens=150,
                 temperature=0.7,
                 top_p=0.9,
                 n=1,
                 stop=None,
             )
-
             scenario = response.choices[0].message.content.strip()
             self.logger.info(f"Generated scenario for category '{category}' and service '{service}': {scenario}")
-            return scenario
+            return scenario, selected_time_slot
 
         except OpenAIError as e:
             self.logger.error(f"OpenAI API error during scenario generation for category '{category}' and service '{service}': {e}")
-            return None
+            return None, None
         except Exception as e:
             self.logger.error(f"Unexpected error during scenario generation for category '{category}' and service '{service}': {e}")
-            return None
+            return None, None
+
 
     def generate_dialogue(self, service: str, prompt: str, min_turns: int, max_turns: int, 
                          temperature: float = 0.9, top_p: float = 0.95, frequency_penalty: float = 0.5, presence_penalty: float = 0.5,
@@ -392,7 +409,9 @@ class DialogueGenerator:
                 f"User: Hello!\n"
                 f"Assistant: Hi there! How can I assist you today?\n"
             )
+            # self.logger.info(f"System prompt: {system_prompt}")
 
+            # self.logger.info(f" prompt: {prompt}")
             for attempt in range(1, max_retries + 1):
                 try:
                     response = self.client.chat.completions.create(
@@ -498,12 +517,13 @@ class DialogueGenerator:
             primary_service = services[0] if services else "bus"
 
             selected_category = random.choice(self.SCENARIO_CATEGORIES)
-            generated_scenario = self.generate_dynamic_scenario(selected_category, primary_service)
+            generated_scenario, selected_time_slot = self.generate_dynamic_scenario(selected_category, primary_service)
             if not generated_scenario:
                 self.logger.warning(f"Could not generate scenario for category '{selected_category}' and service '{primary_service}'. Skipping dialogue_id '{original_dialogue_id}'.")
                 continue
             self.logger.debug(f"Selected category for dialogue_id '{original_dialogue_id}': {selected_category}")
             self.logger.debug(f"Generated scenario for dialogue_id '{original_dialogue_id}': {generated_scenario}")
+            self.logger.debug(f"Selected time slot for dialogue_id '{original_dialogue_id}': {selected_time_slot}")
 
             # Randomly select emotions from the respective emotion lists
             selected_user_emotions = random.sample(self.USER_EMOTION_LIST, 1)
@@ -589,12 +609,13 @@ class DialogueGenerator:
                     'services': services,
                     'dialogue_id': new_dialogue_id,
                     'turns': generated_turns,
-                    'num_lines': num_lines,  # Added number of lines
-                    'user_emotions': selected_user_emotions,      # Record the selected user emotions
-                    'assistant_emotions': selected_assistant_emotions,  # Record the selected assistant emotions
-                    'scenario_category': selected_category,         # Record the selected category
-                    'generated_scenario': generated_scenario,       # Record the generated scenario
-                    'regions': regions                              # Added regions information
+                    'num_lines': num_lines,
+                    'user_emotions': selected_user_emotions,
+                    'assistant_emotions': selected_assistant_emotions,
+                    'scenario_category': selected_category,
+                    'generated_scenario': generated_scenario,
+                    'time_slot': selected_time_slot,  # Add the selected time slot to the dialogue data
+                    'regions': regions
                 })
                 self.existing_ids.add(new_dialogue_id)
                 self.existing_hashes.add(generated_hash)
