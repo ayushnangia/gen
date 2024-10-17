@@ -7,3 +7,8 @@ sentence-transformers
 scikit-learn
 numpy
 phonenumbers
+streamlit
+pandas 
+matplotlib 
+seaborn 
+plotly

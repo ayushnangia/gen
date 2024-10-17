@@ -461,8 +461,9 @@ class DialogueGenerator:
         turn_pattern = re.compile(r'<User>(.*?)</User>\s*<Intent>(.*?)</Intent>\s*<Assistant>(.*?)</Assistant>', re.DOTALL)
         turns = turn_pattern.findall(generated_dialogue)
         
-        for user_message, intent, assistant_response in turns:
+        for turn_number, (user_message, intent, assistant_response) in enumerate(turns, start=1):
             current_turn = {
+                'turn_number': turn_number,
                 'utterance': user_message.strip(),
                 'intent': intent.strip(),
                 'assistant_response': assistant_response.strip()

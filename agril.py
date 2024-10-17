@@ -186,7 +186,9 @@ class DialogueGenerator:
 
         try:
             dialogue_text = "\n".join([f"{turn['speaker']}: {turn['utterance']}" for turn in dialogue['turns']])
-            # self.logger.info(f"{dialogue_text}")
+            # self.logger.info(f"{dialogue_text}") FIx the twice log issue
+            
+
             record = rg.Record(
                 fields={
                     "dialogue": "dialogue_text",
