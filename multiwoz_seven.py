@@ -14,7 +14,7 @@ openai_api_key = os.getenv('OPENAI_KEY')
 client = OpenAI(api_key=openai_api_key)
 
 # Define constants
-MODEL = "gpt-4o-mini"
+MODEL = "gpt-4o"
 MAX_RETRIES = 5
 SLEEP_TIME = 10
 
@@ -42,6 +42,7 @@ def validate_annotations(annotations):
 
     return True
 
+
 def get_annotations_from_openai(dialogue_text, retries=0):
     prompt = f"""
     Given the following dialogue between a user and an assistant:
@@ -60,8 +61,8 @@ def get_annotations_from_openai(dialogue_text, retries=0):
                     "active_intent": "intent_name",
                     "requested_slots": ["slot1", "slot2"],
                     "slots_values": {{
-                        "slot1": ["value1"],
-                        "slot2": ["value2"]
+                        "slots_values_name": ["slot1", "slot2"],
+                        "slots_values_list": [["value1"], ["value2"]]
                     }}
                 }},
                 "slots": [
@@ -76,19 +77,21 @@ def get_annotations_from_openai(dialogue_text, retries=0):
         ],
         "dialogue_acts": [
             {{
-                "act_type": "act_type",
-                "act_slots": [
-                    {{
-                        "slot_name": "slot_name",
-                        "slot_value": "slot_value"
-                    }}
-                ],
+                "dialog_act": {{
+                    "act_type": ["act_type"],
+                    "act_slots": [
+                        {{
+                            "slot_name": ["slot_name"],
+                            "slot_value": ["slot_value"]
+                        }}
+                    ]
+                }},
                 "span_info": {{
-                    "act_type": "act_type",
-                    "act_slot_name": "slot_name",
-                    "act_slot_value": "slot_value",
-                    "span_start": start_index,
-                    "span_end": end_index
+                    "act_type": ["act_type"],
+                    "act_slot_name": ["slot_name"],
+                    "act_slot_value": ["slot_value"],
+                    "span_start": [start_index],
+                    "span_end": [end_index]
                 }}
             }}
         ]
@@ -97,6 +100,7 @@ def get_annotations_from_openai(dialogue_text, retries=0):
 
     Provide the annotations for each turn in the dialogue.
     """
+
     try:
         response = client.chat.completions.create(
             model=MODEL,
@@ -141,11 +145,8 @@ def get_annotations_from_openai(dialogue_text, retries=0):
 
 def process_dialogue(dialogue):
     dialogue_text = ''
-    for turn in dialogue['turns']:
-        speaker = 'User' if turn['turn_number'] % 2 != 0 else 'Assistant'
-        dialogue_text += f"{speaker}: {turn['utterance']}\n"
-        if speaker == 'Assistant':
-            dialogue_text += f"{speaker}: {turn['assistant_response']}\n"
+    for turn in dialogue['turns']['utterance']:
+        dialogue_text += f"{turn}\n"
 
     print(f"Dialogue text being sent to OpenAI:\n{dialogue_text}")  # Debug print
 
