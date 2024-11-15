@@ -82,14 +82,13 @@ class DialogueGenerator:
             self.logger.error(f"Failed to load SentenceTransformer model: {e}")
             raise e
         self.travel_time_slots = [
-            "Early Morning (5 AM - 8 AM)",
-            "Late Morning (9 AM - 11 AM)",
-            "Afternoon (12 PM - 4 PM)",
-            "Evening (5 PM - 8 PM)",
-            "Late Night (9 PM - 12 AM)",
-            "Overnight (12 AM - 5 AM)"
+            (5, 9, "Early Morning"),    # 5 AM - 8:55 AM
+            (9, 12, "Late Morning"),    # 9 AM - 11:55 AM
+            (12, 17, "Afternoon"),      # 12 PM - 4:55 PM
+            (17, 21, "Evening"),        # 5 PM - 8:55 PM
+            (21, 24, "Late Night"),     # 9 PM - 11:55 PM
+            (0, 5, "Overnight")         # 12 AM - 4:55 AM
         ]
-
         self.RESOLUTION_STATUSES = {
             "Resolved": 0.4,
             "Failed": 0.3,
@@ -98,19 +97,18 @@ class DialogueGenerator:
 
         # Define emotion lists
         self.USER_EMOTION_LIST = [
-            "Frustration", "Confusion", "Gratitude", "Impatience", "Disappointment",
-            "Relief", "Annoyance", "Appreciation", "Curiosity", "Urgency",
-            "Hesitation", "Hopefulness", "Satisfaction", "Concern", "Suspicion",
-            "Irritation", "Interest", "Indifference", "Acceptance", "Disbelief"
+            "Frustrated", "Angry", "Confused", "Worried", "Disappointed",
+            "Happy", "Anxious", "Impatient", "Skeptical", "Desperate",
+            "Overwhelmed", "Hopeful", "Satisfied", "Stressed", "Suspicious",
+            "Tired", "Excited", "Indifferent", "Grateful", "Demanding"
         ]
 
         self.ASSISTANT_EMOTION_LIST = [
-            "Empathy", "Politeness", "Reassurance", "Understanding", "Patience",
-            "Sympathy", "Encouragement", "Clarification", "Helpfulness", "Professionalism",
-            "Confidence", "Calmness", "Supportiveness", "Attentiveness",
-            "Apologetic", "Proactive", "Respectfulness", "Neutrality", "Cheerfulness"
+            "Professional", "Informative", "Reassuring", "Diplomatic", "Patient",
+            "Efficient", "Accommodating", "Solution-focused", "Methodical", "Proactive",
+            "Analytical", "Composed", "Detail-oriented", "Responsive", "Thorough",
+            "Systematic", "Precise", "Objective", "Resourceful", "Knowledgeable"
         ]
-
         # Scenario categories
         self.SCENARIO_CATEGORIES = [
             "booking",
@@ -184,6 +182,33 @@ class DialogueGenerator:
             index = random.choice(self.summary_dict[summary])
 
         return self.persona_dataset[index]['persona']
+    def generate_random_time(self, time_slot: Tuple[int, int, str]) -> str:
+        """
+        Generates a random time within a given time slot in 5-minute intervals.
+        
+        Args:
+            time_slot: Tuple of (start_hour, end_hour, slot_name)
+        
+        Returns:
+            String representation of the random time (HH:MM format)
+        """
+        start_hour, end_hour = time_slot[0], time_slot[1]
+        
+        # Convert hours to minutes
+        start_minutes = start_hour * 60
+        end_minutes = (end_hour * 60) + 55  # Add 55 to include the last hour's minutes
+        
+        # Generate random minutes in 5-minute intervals
+        possible_minutes = list(range(start_minutes, end_minutes + 1, 5))
+        if possible_minutes:
+            random_minutes = random.choice(possible_minutes)
+            hours = random_minutes // 60
+            mins = random_minutes % 60
+            return f"{hours:02d}:{mins:02d}"
+        
+        # Fallback to start time
+        return f"{start_hour:02d}:00"
+
 
     def load_dataset(self) -> any:
         """
@@ -334,20 +359,22 @@ class DialogueGenerator:
         """
         try:
             user_persona = self.select_random_persona()
-            selected_time_slot = random.choice(self.travel_time_slots)
+            selected_slot = random.choice(self.travel_time_slots)
+            specific_time = self.generate_random_time(selected_slot)
+
             self.logger.info(f"Selected persona: {user_persona}")
-            self.logger.info(f"Selected time slot: {selected_time_slot}")
-            
+            self.logger.info(f"Selected time: {specific_time} ({selected_slot[2]})")
+
             system_prompt = (
                 "You are a creative assistant tasked with generating specific scenarios relevant to the given category and service. "
                 "Each scenario should be detailed, pertinent to the provided service, and confined to 2-3 lines. "
                 f"Provide one unique scenario for the category and service from the perspective of the persona: {user_persona}. "
-                f"Pick a random time from the following time slot: {selected_time_slot}."
+                f"The scenario should occur specifically at {specific_time} during the {selected_slot[2]} period."
             )
 
             user_prompt = (
                 f"Generate a concise (2-3 lines) scenario for the category: '{category}' and transport service: '{service}'. "
-                f"The scenario should occur during the {selected_time_slot} time slot. "
+                f"The scenario should occur during the {specific_time} time slot. "
                 "Please ensure that the transport service and time slot are always kept in mind."
             )
 
@@ -365,7 +392,7 @@ class DialogueGenerator:
             )
             scenario = response.choices[0].message.content.strip()
             self.logger.info(f"Generated scenario for category '{category}' and service '{service}': {scenario}")
-            return scenario, selected_time_slot
+            return scenario, selected_slot
 
         except OpenAIError as e:
             self.logger.error(f"OpenAI API error during scenario generation for category '{category}' and service '{service}': {e}")
