@@ -164,7 +164,16 @@ class DialogueGenerator:
                 "driver_tracking",
                 "booking"
             ],
+            # Hospital-specific
+            "hospital": [
+                "appointment_booking",
+                "department_inquiry",
+                "medical_information",
+                "emergency_services",
+                "booking"
+            ],
             
+
             # Bus-specific
             "bus": [
                 "route_information",
