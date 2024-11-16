@@ -110,20 +110,71 @@ class DialogueGenerator:
             "Systematic", "Precise", "Objective", "Resourceful", "Knowledgeable"
         ]
         # Scenario categories
-        self.SCENARIO_CATEGORIES = [
-            "booking",
-            "cancellation",
-            "complaint",
-            "feedback",
-            "inquiry",
-            "rescheduling",
-            "issue reporting",
-            "assistance seeking",
-            "personal details update",
-            "refund request",
-            "payment issues",
-            "review",
-        ]
+        self.SCENARIO_CATEGORIES = {
+            # General categories (applicable across services)
+            "general": [
+                "cancellation",
+                "complaint",
+                "refund_request",
+                "payment_issues",
+                "general_inquiry",
+                "feedback",
+                "technical_support",
+                "lost_and_found"
+            ],
+                        # Restaurant-specific
+            "restaurant": [
+                "dining_reservation",
+                "dietary_requirements",
+                "table_modification",
+                "special_occasion",
+                "booking"
+            ],
+            
+            # Hotel-specific
+            "hotel": [
+                "room_reservation",
+                "check_in_out",
+                "amenity_inquiry",
+                "room_service",
+                "booking"
+            ],
+            # Train-specific
+            "train": [
+                "journey_planning",
+                "schedule_inquiry",
+                "ticket_booking",
+                "platform_information",
+                "booking"
+            ],
+            
+            # Attraction-specific
+            "attraction": [
+                "ticket_availability",
+                "opening_hours",
+                "guided_tour",
+                "venue_information",
+                "booking"
+            ],
+            # Taxi-specific
+            "taxi": [
+                "ride_booking",
+                "pickup_location",
+                "fare_inquiry",
+                "driver_tracking",
+                "booking"
+            ],
+            
+            # Bus-specific
+            "bus": [
+                "route_information",
+                "schedule_inquiry",
+                "ticket_booking",
+                "stop_location",
+                "booking"
+            ]
+        }
+
 
         # Predefined regions
         self.PREDEFINED_REGIONS = [
@@ -139,7 +190,7 @@ class DialogueGenerator:
             "Rome", "Cape Town", "Lagos", "Casablanca", "Barcelona",
             "Seoul", "Melbourne", "Copenhagen", "Zurich", "Kuala Lumpur"
         ]
-
+        
         # Load dataset once during initialization
         self.dataset = self.load_dataset()
 
@@ -147,6 +198,21 @@ class DialogueGenerator:
         self.existing_ids = self.load_existing_dialogues()
         self.existing_hashes = self.load_existing_hashes()
         self.existing_embeddings = self.load_existing_embeddings()
+    def get_categories_for_service(self, service: str) -> List[str]:
+        """
+        Returns a list of categories applicable to the given service.
+        Combines service-specific categories with general categories.
+        """
+        # Get general categories that apply to all services
+        categories = self.SCENARIO_CATEGORIES["general"].copy()
+        
+        # Add service-specific categories if they exist
+        if service.lower() in self.SCENARIO_CATEGORIES:
+            categories.extend(self.SCENARIO_CATEGORIES[service.lower()])
+        else:
+            self.logger.warning(f"Unknown service '{service}', using only general categories")
+            
+        return categories
     def load_persona_dataset(self):
         dataset_path = './local_datasets/FinePersonas-v0.1-clustering-100k'
         dataset = load_from_disk(dataset_path)
@@ -358,6 +424,14 @@ class DialogueGenerator:
         Ensures the scenario is relevant to the service and limited to 2-3 lines.
         """
         try:
+            valid_categories = self.get_categories_for_service(service)
+        
+        # If the provided category isn't valid for this service, select a random valid one
+            if category not in valid_categories:
+                category = random.choice(valid_categories)
+                self.logger.info(f"Selected new category '{category}' for service '{service}'")
+
+
             user_persona = self.select_random_persona()
             selected_slot = random.choice(self.travel_time_slots)
             specific_time = self.generate_random_time(selected_slot)
@@ -556,8 +630,14 @@ class DialogueGenerator:
             # Scenario Diversification: Dynamically generate a scenario for this dialogue
             primary_service = services[0] if services else "bus"
 
-            selected_category = random.choice(self.SCENARIO_CATEGORIES)
-            generated_scenario, selected_time_slot = self.generate_dynamic_scenario(selected_category, primary_service,assigned_region)
+            valid_categories = self.get_categories_for_service(primary_service)
+            selected_category = random.choice(valid_categories)
+            
+            generated_scenario, selected_time_slot = self.generate_dynamic_scenario(
+                selected_category, 
+                primary_service,
+                assigned_region
+            )
             if not generated_scenario:
                 self.logger.warning(f"Could not generate scenario for category '{selected_category}' and service '{primary_service}'. Skipping dialogue_id '{original_dialogue_id}'.")
                 continue
