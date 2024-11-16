@@ -28,7 +28,7 @@ class DialogueGenerator:
         self.hash_file = config.get('hash_file', 'dialogue_hashes.json')
         self.embedding_file = config.get('embedding_file', 'dialogue_embeddings.npy')
         self.similarity_threshold = config.get('similarity_threshold', 0.9)
-        self.dataset_name = config.get('dataset_name', 'Ayushnangia/transport_multiwoz_v22')
+        self.dataset_name = config.get('dataset_name', 'pfb30/multi_woz_v22')
         self.min_turns_range = config.get('min_turns_range', (5, 10))
         self.max_turns_range = config.get('max_turns_range', (7, 20))
         self.temperature_range = config.get('temperature_range', (0.7, 1.0))
@@ -215,13 +215,13 @@ class DialogueGenerator:
         Loads the dataset from Hugging Face once during initialization.
         """
         try:
-            self.logger.info(f"Loading dataset from local path: ./local_datasets/transport_multiwoz_v22")
-            dataset = DatasetDict.load_from_disk("./local_datasets/transport_multiwoz_v22")
+            self.logger.info(f"Loading dataset from local path: ./local_datasets/multi_woz_v22")
+            dataset = DatasetDict.load_from_disk("./local_datasets/multi_woz_v22")
             self.logger.info("Dataset loaded successfully.")
             self.logger.info(f"Number of dialogues in 'train' split: {len(dataset['train'])}")
             return dataset['train']
         except Exception as e:
-            self.logger.error(f"Failed to load dataset from ./local_datasets/transport_multiwoz_v22: {e}")
+            self.logger.error(f"Failed to load dataset from ./local_datasets/multi_woz_v22: {e}")
             raise e
 
 
@@ -352,7 +352,7 @@ class DialogueGenerator:
         Assigns emotions to each turn in the dialogue based on the speaker.
         """
         return turns
-    def generate_dynamic_scenario(self, category: str, service: str) -> str:
+    def generate_dynamic_scenario(self, category: str, service: str, region: str) -> str:
         """
         Generates a specific scenario based on the given category and service using OpenAI's API.
         Ensures the scenario is relevant to the service and limited to 2-3 lines.
@@ -364,18 +364,21 @@ class DialogueGenerator:
 
             self.logger.info(f"Selected persona: {user_persona}")
             self.logger.info(f"Selected time: {specific_time} ({selected_slot[2]})")
+            self.logger.info(f"Selected region: {region}")
 
             system_prompt = (
                 "You are a creative assistant tasked with generating specific scenarios relevant to the given category and service. "
                 "Each scenario should be detailed, pertinent to the provided service, and confined to 2-3 lines. "
                 f"Provide one unique scenario for the category and service from the perspective of the persona: {user_persona}. "
-                f"The scenario should occur specifically at {specific_time} during the {selected_slot[2]} period."
+                f"The scenario should occur specifically at {specific_time} during the {selected_slot[2]} period"
+                f"and be set in {region}. Include local context and regional specifics where appropriate."
+
             )
 
             user_prompt = (
-                f"Generate a concise (2-3 lines) scenario for the category: '{category}' and transport service: '{service}'. "
-                f"The scenario should occur during the {specific_time} time slot. "
-                "Please ensure that the transport service and time slot are always kept in mind."
+                f"Generate a concise (2-3 lines) scenario for the category: '{category}' and service: '{service}'. "
+                f"The scenario should occur during the {specific_time} time slot set in {region} "
+                "Please ensure that the service, location, and time slot are always kept in mind."
             )
 
             response = self.client.chat.completions.create(
@@ -426,7 +429,7 @@ class DialogueGenerator:
                 f"The dialogue should have between {min_turns} and {max_turns} turns (a turn is one user message and one assistant response). "
                 f"The dialogue should not be the same as any existing dialogues and should be better and more engaging. "
                 f"Make sure that these dialogues are representative of conversations between a text/voice interface hence the assistant might not be present. "
-                f"These dialogues should encompass and showcase different scenarios and outcomes in a strictly transport service setting. "
+                f"These dialogues should encompass and showcase different scenarios and outcomes in a strictly service setting. "
                 f"Encourage diverse linguistic expressions and response styles to mimic real human interactions.\n\n"
                 f"For each turn, provide an intent classification for the user's message. "
                 f"Use the following format for each turn:\n"
@@ -554,7 +557,7 @@ class DialogueGenerator:
             primary_service = services[0] if services else "bus"
 
             selected_category = random.choice(self.SCENARIO_CATEGORIES)
-            generated_scenario, selected_time_slot = self.generate_dynamic_scenario(selected_category, primary_service)
+            generated_scenario, selected_time_slot = self.generate_dynamic_scenario(selected_category, primary_service,assigned_region)
             if not generated_scenario:
                 self.logger.warning(f"Could not generate scenario for category '{selected_category}' and service '{primary_service}'. Skipping dialogue_id '{original_dialogue_id}'.")
                 continue
@@ -775,7 +778,7 @@ def parse_arguments():
     parser.add_argument('--hash_file', type=str, default='dialogue_hashes.json', help='Hash file to save dialogue hashes.')
     parser.add_argument('--embedding_file', type=str, default='dialogue_embeddings.npy', help='File to save dialogue embeddings.')
     parser.add_argument('--similarity_threshold', type=float, default=0.9, help='Similarity threshold for uniqueness (e.g., 0.9).')
-    parser.add_argument('--dataset_name', type=str, default='Ayushnangia/transport_multiwoz_v22', help='Name of the dataset to use.')
+    parser.add_argument('--dataset_name', type=str, default='pfb30/multi_woz_v22', help='Name of the dataset to use.')
     parser.add_argument('--min_turns', type=int, nargs=2, default=[5, 10], help='Minimum turns range (e.g., 5 10).')
     parser.add_argument('--max_turns', type=int, nargs=2, default=[7, 20], help='Maximum turns range (e.g., 7 20).')
     parser.add_argument('--temperature', type=float, nargs='+', default=[0.7, 0.8, 0.9, 1.0], help='Temperature options for OpenAI API.')
