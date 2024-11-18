@@ -75,10 +75,24 @@ Before using the `capstone.py` script, ensure that your environment meets the fo
         ```
         OPENAI_KEY=your_openai_api_key_here
         ```
+4. **Run setup.py**:
+
+    
+        ```
+        python setup.py
+        ```
+5. **Run alpha_flight.py**:
+
+        ```
+        python alpha_flight.py --total generations 10
+        ```
+        
+        Note: Can change other parameters too.
+
 
 ## Usage
 
-The `capstone.py` script can be executed via the command line with various arguments to customize its behavior.
+The `alpha_flight.py` script can be executed via the command line with various arguments to customize its behavior.
 
 ### Command-Line Arguments
 
@@ -105,7 +119,7 @@ The `capstone.py` script can be executed via the command line with various argum
     Generate 10 dialogues with default parameters.
 
     ```bash
-    python capstone.py --num_generations 10
+    python alpha_flight.py --num_generations 10
     ```
 
 2. **Custom Turns and Output File**:
@@ -113,7 +127,7 @@ The `capstone.py` script can be executed via the command line with various argum
     Generate 20 dialogues with a minimum of 4 turns and a maximum of 8 turns, saving the output to `my_dialogues.json`.
 
     ```bash
-    python capstone.py --num_generations 20 --min_turns 4 --max_turns 8 --output_file my_dialogues.json
+    python alpha_flight.py --num_generations 20 --min_turns 4 --max_turns 8 --output_file my_dialogues.json
     ```
 
 3. **Dynamic Parameter Tuning**:
@@ -121,7 +135,7 @@ The `capstone.py` script can be executed via the command line with various argum
     Generate 15 dialogues with customized OpenAI API parameters to balance creativity and coherence.
 
     ```bash
-    python capstone.py --num_generations 15 --temperature 0.7 --top_p 0.9 --frequency_penalty 0.3 --presence_penalty 0.4
+    python alpha_flight.py --num_generations 15 --temperature 0.7 --top_p 0.9 --frequency_penalty 0.3 --presence_penalty 0.4
     ```
 
 ## Logging
