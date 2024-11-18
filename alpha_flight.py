@@ -113,22 +113,25 @@ class DialogueGenerator:
         self.SCENARIO_CATEGORIES = {
             # General categories (applicable across services)
             "general": [
-                "cancellation",
-                "complaint",
-                "refund_request",
-                "payment_issues",
-                "general_inquiry",
-                "feedback",
-                "technical_support",
-                "lost_and_found"
+            "account_management",      # Managing user accounts, passwords, etc.
+            "cancellation_general",    # General cancellation requests not tied to a specific service
+            "complaint",               # General complaints about services or experiences
+            "refund_request_general",  # Refunds not specific to a service
+            "payment_issues",          # Issues related to payments across services
+            "general_inquiry",         # General questions not specific to any service
+            "feedback",                # Providing feedback about services or experiences
+            "technical_support",       # Technical assistance for app or website issues
+            "lost_and_found_general"   # Reporting lost items not tied to a specific service
             ],
                         # Restaurant-specific
             "restaurant": [
-                "dining_reservation",
-                "dietary_requirements",
-                "table_modification",
-                "special_occasion",
-                "booking"
+            "dining_reservation",
+            "dietary_requirements",
+            "table_modification",
+            "special_occasion",
+            "menu_inquiry",            # Inquiring about menu items or specials
+            "order_status",            # Checking the status of an order
+            "reservation_cancellation" # Specific cancellation for reservations
             ],
             
             # Hotel-specific
@@ -137,15 +140,19 @@ class DialogueGenerator:
                 "check_in_out",
                 "amenity_inquiry",
                 "room_service",
-                "booking"
+                "booking_modification",    # Modifying existing bookings
+                "housekeeping_request",    # Requests related to room cleaning and maintenance
+                "reservation_cancellation" # Specific cancellation for hotel bookings
             ],
             # Train-specific
             "train": [
-                "journey_planning",
-                "schedule_inquiry",
-                "ticket_booking",
-                "platform_information",
-                "booking"
+            "journey_planning",
+            "schedule_inquiry",
+            "ticket_booking",
+            "platform_information",
+            "ticket_change",           # Changing ticket details
+            "ticket_cancellation",     # Specific cancellation for train tickets
+            "seat_selection"           # Selecting or changing seats
             ],
             
             # Attraction-specific
@@ -154,7 +161,9 @@ class DialogueGenerator:
                 "opening_hours",
                 "guided_tour",
                 "venue_information",
-                "booking"
+                "group_booking",           # Booking for groups
+                "ticket_cancellation",     # Specific cancellation for attraction tickets
+                "accessibility_inquiry"    # Inquiries about accessibility features
             ],
             # Taxi-specific
             "taxi": [
@@ -162,7 +171,9 @@ class DialogueGenerator:
                 "pickup_location",
                 "fare_inquiry",
                 "driver_tracking",
-                "booking"
+                "ride_cancellation",       # Specific cancellation for taxi rides
+                "ride_feedback",           # Providing feedback on taxi rides
+                "service_type_inquiry"    # Inquiring about different types of taxi services
             ],
             # Hospital-specific
             "hospital": [
@@ -170,7 +181,9 @@ class DialogueGenerator:
                 "department_inquiry",
                 "medical_information",
                 "emergency_services",
-                "booking"
+                "appointment_cancellation",# Specific cancellation for appointments
+                "insurance_inquiry",       # Questions about insurance coverage
+                "medical_record_request"   # Requesting medical records
             ],
             
 
@@ -180,19 +193,24 @@ class DialogueGenerator:
                 "schedule_inquiry",
                 "ticket_booking",
                 "stop_location",
-                "booking"
+                "ticket_change",           # Changing bus ticket details
+                "ticket_cancellation",     # Specific cancellation for bus tickets
+                "seat_selection"           # Selecting or changing bus seats
             ],
             "flight": [
                 "flight_booking",
-                "cancellation",
+                "cancellation_flight",     # Specific cancellation for flights
                 "ticket_change",
                 "baggage_inquiry",
                 "check_in",
                 "seat_selection",
                 "flight_status",
                 "upgrade_request",
-                "refund_request",
-                "lounge_access"
+                "refund_request_flight",   # Refund requests specific to flights
+                "lounge_access",
+                "boarding_pass_issue",     # Issues related to boarding passes
+                "special_meals",           # Requests for special meals on flights
+                "pet_transportation"      # Inquiries about transporting pets
             ]
 
         }
@@ -435,11 +453,11 @@ class DialogueGenerator:
             return False
         return True
 
-    def assign_selected_emotions(self, turns: List[Dict], user_emotions: List[str], assistant_emotions: List[str]) -> List[Dict]:
-        """
-        Assigns emotions to each turn in the dialogue based on the speaker.
-        """
-        return turns
+    # def assign_selected_emotions(self, turns: List[Dict], user_emotions: List[str], assistant_emotions: List[str]) -> List[Dict]:
+    #     """
+    #     Assigns emotions to each turn in the dialogue based on the speaker.
+    #     """
+    #     return turns
     def generate_dynamic_scenario(self, category: str, listservice: list, region: str) -> str:
         """
         Generates a specific scenario based on the given category and service using OpenAI's API.
@@ -875,7 +893,7 @@ class DialogueGenerator:
                 self.logger.error(f"Error processing generated dialogue for dialogue_id '{original_dialogue_id}': {e}")
                 continue
                 # Assign emotions to each turn based on the speaker
-            generated_turns = self.assign_selected_emotions(generated_turns, selected_user_emotions, selected_assistant_emotions)
+            # generated_turns = self.assign_selected_emotions(generated_turns, selected_user_emotions, selected_assistant_emotions)
 
             # Generate conversation text without including it in the JSON
             generated_conversation_text = "\n".join([

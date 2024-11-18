@@ -1274,6 +1274,96 @@ flowchart LR
     %% Persistence Flow
     SaveDialogues --> EmbeddingHashes
 ```
+ ### Broken down diagram of the datagen pipeline
+
+
+1. **High-Level Overview Diagram**
+```mermaid
+flowchart LR
+    CLI["🖥️ Command-Line<br>Interface"] --> Init["🚀 Initialization"]
+    Init --> Data["💾 Data<br>Management"]
+    Data --> Core["⚡ Core<br>Processing"]
+    Core --> Persist["💽 Data<br>Persistence"]
+    
+    Test["🧪 Testing"] -.-> Init
+    Config["⚙️ Configuration"] -.-> Init
+```
+
+2. **Data Flow Diagram**
+```mermaid
+flowchart LR
+    subgraph Data ["💾 Data Sources"]
+        Primary["📚 Primary Dataset<br>(multi_woz_v22)"]
+        Persona["👥 Persona Dataset<br>(FinePersonas)"]
+        Regions["🌍 Regions"]
+        Inputs["📥 Additional Inputs<br>😊 Emotions<br>✅ Resolution Status<br>⏰ Time Slots"]
+    end
+
+    subgraph Process ["⚡ Processing"]
+        Extract["📑 Extraction"]
+        Transform["🔄 Transformation"]
+        Generate["💬 Generation"]
+    end
+
+    Data --> Process
+    Process --> Save["💾 Save Results"]
+```
+
+3. **Core Processing Diagram**
+```mermaid
+flowchart LR
+    subgraph Core ["⚡ Core Processing"]
+        Person["👤 Persona<br>Management"]
+        Scenario["🎬 Scenario<br>Generation"]
+        Dialog["💬 Dialogue<br>Generation"]
+        Unique["🔍 Uniqueness<br>Check"]
+    end
+
+    Person --> Scenario
+    Scenario --> Dialog
+    Dialog --> Unique
+    Unique --> Save["💾 Save"]
+    
+    API["🤖 OpenAI API"] -.-> Dialog
+    Embed["🧮 Embeddings"] -.-> Unique
+```
+
+4. **Error Handling and Validation Diagram**
+```mermaid
+flowchart LR
+    subgraph Validation ["🧪 Validation"]
+        Input["📥 Input<br>Validation"]
+        Format["📋 Format<br>Check"]
+        Unique["🔍 Uniqueness<br>Verification"]
+    end
+
+    subgraph Errors ["⚠️ Error Handling"]
+        Retry["🔄 Retry<br>Mechanism"]
+        Log["📝 Logging"]
+        Skip["⏭️ Skip<br>Invalid"]
+    end
+
+    Validation --> Errors
+    Errors --> Continue["✅ Continue<br>Processing"]
+```
+
+5. **Data Persistence Diagram**
+```mermaid
+flowchart LR
+    subgraph Save ["💾 Data Persistence"]
+        Dialog["💬 Dialogues<br>JSON"]
+        Embed["🧮 Embeddings<br>NPY"]
+        Hash["🔒 Hashes<br>JSON"]
+    end
+
+    Generate["⚡ Generation"] --> Dialog
+    Verify["🔍 Verification"] --> Embed
+    Unique["✅ Uniqueness"] --> Hash
+
+    Dialog --> Batch["📦 Batch<br>Processing"]
+    Embed --> Batch
+    Hash --> Batch
+```
 
 <!-- 
 flowchart LR
