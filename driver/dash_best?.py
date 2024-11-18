@@ -147,6 +147,8 @@ def validate_data(data):
 
     # Optionally, return True if validation passes
     return True
+def compute_sentiment(text):
+    return TextBlob(text).sentiment.polarity
 
 # File uploader
 data_file = st.file_uploader("Upload JSON file", type=["json"])
@@ -188,6 +190,21 @@ all_assistant_emotions = dialogues['assistant_emotions'].explode().dropna().uniq
 selected_assistant_emotions = st.sidebar.multiselect("Select Assistant Emotions", options=all_assistant_emotions, default=all_assistant_emotions)
 
 # Apply filters
+def extract_entities(text):
+    # Simple regex patterns for demonstration
+    date_pattern = r'\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|' \
+                   r'May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|' \
+                   r'Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\b'
+    time_pattern = r'\b(?:[01]?\d|2[0-3]):[0-5]\d\b'
+    location_pattern = r'\b[A-Z][a-z]+(?: [A-Z][a-z]+)*\b'  # Simple pattern for capitalized words
+
+    dates = re.findall(date_pattern, text)
+    times = re.findall(time_pattern, text)
+    locations = re.findall(location_pattern, text)
+
+    return {'dates': dates, 'times': times, 'locations': locations}
+
+# Apply filters
 filtered_dialogues = dialogues[
     (dialogues['scenario_category'].isin(selected_scenarios)) &
     (dialogues['resolution_status'].isin(selected_resolutions)) &
@@ -197,6 +214,15 @@ filtered_dialogues = dialogues[
     (dialogues['user_emotions'].apply(lambda x: any(emotion in x for emotion in selected_user_emotions))) &
     (dialogues['assistant_emotions'].apply(lambda x: any(emotion in x for emotion in selected_assistant_emotions)))
 ]
+
+# Add sentiment analysis
+filtered_dialogues['User Sentiment'] = filtered_dialogues['User Utterance'].apply(lambda x: compute_sentiment(str(x)))
+filtered_dialogues['Assistant Sentiment'] = filtered_dialogues['Assistant Response'].apply(lambda x: compute_sentiment(str(x)))
+
+# Add entity extraction
+filtered_dialogues['User Entities'] = filtered_dialogues['User Utterance'].apply(lambda x: extract_entities(str(x)))
+filtered_dialogues['Assistant Entities'] = filtered_dialogues['Assistant Response'].apply(lambda x: extract_entities(str(x)))
+
 
 st.sidebar.markdown("---")
 st.sidebar.markdown(f"**Total Dialogues:** {filtered_dialogues['dialogue_id'].nunique()}")
@@ -219,12 +245,6 @@ with col4:
     st.metric("Resolution Statuses", len(dialogues['resolution_status'].unique()))
 
 # Sentiment Analysis Function
-def compute_sentiment(text):
-    return TextBlob(text).sentiment.polarity
-
-# Compute Sentiment Scores
-dialogues['User Sentiment'] = dialogues['User Utterance'].apply(lambda x: compute_sentiment(str(x)))
-dialogues['Assistant Sentiment'] = dialogues['Assistant Response'].apply(lambda x: compute_sentiment(str(x)))
 
 # Extract entities using regex (e.g., dates, times, locations)
 def extract_entities(text):
@@ -506,13 +526,117 @@ with tabs[8]:
     fig_entities.update_traces(textposition='auto')
     st.plotly_chart(fig_entities, use_container_width=True)
 
-    st.subheader("Word Cloud of Assistant Responses")
+    # st.subheader("Word Cloud of Assistant Responses")
+    # text = " ".join(filtered_dialogues['Assistant Response'].dropna())
+    # wordcloud = WordCloud(
+    #     width=1200, 
+    #     height=600,
+    #     background_color='white',
+    #     colormap='viridis',  # Use a better color scheme
+    #     max_words=100,       # Limit number of words
+    #     min_font_size=10,    # Set minimum font size
+    #     max_font_size=150,   # Set maximum font size
+    #     random_state=42,     # For reproducibility
+    #     collocations=False   # Avoid splitting words
+    # ).generate(text)
+
+    # # Create figure with better size
+    # fig, ax = plt.subplots(figsize=(20, 10))
+    # ax.imshow(wordcloud, interpolation='bilinear')
+    # ax.axis('off')
+    # plt.tight_layout(pad=0)
+    # st.pyplot(fig)
+
+# In the Advanced Analysis tab section
+    st.subheader("Word Cloud Analysis")
+
+    # Text preprocessing
+    def preprocess_text(text):
+        # Convert to lowercase
+        text = text.lower()
+        # Remove special characters and numbers
+        text = re.sub(r'[^a-zA-Z\s]', '', text)
+        # Remove extra whitespace
+        text = ' '.join(text.split())
+        return text
+
+    # Common English stop words to remove
+    custom_stop_words = set([
+        'the', 'and', 'to', 'of', 'a', 'in', 'that', 'is', 'for', 'on', 'with',
+        'be', 'this', 'will', 'can', 'at', 'by', 'an', 'are', 'so', 'it', 'as',
+        'would', 'could', 'should', 'i', 'you', 'your', 'we', 'my', 'me', 'he',
+        'she', 'they', 'am', 'is', 'are', 'was', 'were', 'been', 'being'
+    ])
+
+    # Prepare text
     text = " ".join(filtered_dialogues['Assistant Response'].dropna())
-    wordcloud = WordCloud(width=800, height=400, background_color='white').generate(text)
-    fig, ax = plt.subplots(figsize=(10, 5))
+    processed_text = preprocess_text(text)
+
+    # Create and configure word cloud
+    wordcloud = WordCloud(
+        width=2400,              # Higher resolution
+        height=1200,
+        background_color='white',
+        colormap='viridis',       # More vibrant colormap
+        max_words=150,           # Show more words
+        min_font_size=8,
+        max_font_size=160,
+        random_state=42,
+        collocations=False,
+        stopwords=custom_stop_words,
+        prefer_horizontal=0.7,   # 70% horizontal words for better readability
+        font_path=None,          # Use default font, but you can specify a custom font file
+        relative_scaling=0.5,    # Relative importance of frequencies
+        contour_width=3,
+        contour_color='steelblue'
+    ).generate(processed_text)
+
+    # Create figure with improved styling
+    fig, ax = plt.subplots(figsize=(20, 10), facecolor='black')
     ax.imshow(wordcloud, interpolation='bilinear')
     ax.axis('off')
-    st.pyplot(fig)
+    ax.set_facecolor('black')
+    plt.tight_layout(pad=0)
+
+    # Add a subtle title
+    plt.title('Most Common Terms in Assistant Responses', 
+            color='white', 
+            pad=20, 
+            fontsize=16, 
+            fontweight='bold')
+
+    # Display metrics alongside the visualization
+    col1, col2 = st.columns([3, 1])
+
+    with col1:
+        st.pyplot(fig)
+
+    with col2:
+        # Display some interesting metrics
+        word_freq = Counter(processed_text.split())
+        total_words = len(word_freq)
+        unique_words = len(set(processed_text.split()))
+        
+        st.metric("Total Unique Words", unique_words)
+        st.metric("Most Common Word", max(word_freq.items(), key=lambda x: x[1])[0])
+        
+        # Top 5 most common words
+        st.write("**Top 5 Most Common Words:**")
+        for word, count in sorted(word_freq.items(), key=lambda x: x[1], reverse=True)[:5]:
+            st.write(f"- {word}: {count}")
+
+    # Add explanatory text
+    st.markdown("""
+        <div style='padding: 15px; border-radius: 5px; margin-top: 20px;'>
+            <h4>About this Visualization</h4>
+            <p>This word cloud visualizes the most frequently used terms in assistant responses. 
+            The size of each word corresponds to its frequency in the conversations. 
+            Common stop words have been removed to focus on meaningful content.</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+
+
 
     st.subheader("Correlation Matrix")
     # Compute correlations
