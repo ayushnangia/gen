@@ -71,8 +71,8 @@ def parse_arguments():
     parser = argparse.ArgumentParser(description="Setup Script for Dialogue Generation")
     parser.add_argument('--model_name', type=str, default='all-MiniLM-L6-v2', help='Name of the SentenceTransformer model to download')
     parser.add_argument('--model_path', type=str, default='./models/sentence_transformer', help='Path to save the SentenceTransformer model')
-    parser.add_argument('--dataset_name', type=str, default='Ayushnangia/transport_multiwoz_v22', help='Name of the dataset to download')
-    parser.add_argument('--dataset_path', type=str, default='./local_datasets/transport_multiwoz_v22', help='Path to save the dataset')
+    parser.add_argument('--dataset_name', type=str, default='pfb30/multi_woz_v22', help='Name of the dataset to download')
+    parser.add_argument('--dataset_path', type=str, default='./local_datasets/multi_woz_v22', help='Path to save the dataset')
     return parser.parse_args()
 
 if __name__ == "__main__":
