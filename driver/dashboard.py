@@ -21,20 +21,33 @@ st.title("📊 Dialogue Interaction Dashboard")
 @st.cache_data
 def load_data(uploaded_file):
     data = json.loads(uploaded_file.getvalue().decode('utf-8'))
-    dialogues = pd.json_normalize(data)
     
-    # Explode the turns column
-    turns = dialogues.apply(lambda x: pd.Series(x['turns']), axis=1).stack().reset_index(level=1, drop=True)
-    turns = pd.json_normalize(turns)
+    # Flatten the data using pd.json_normalize
+    dialogues = pd.json_normalize(
+        data,
+        record_path='turns',
+        meta=[
+            'dialogue_id', 'services', 'num_lines', 'user_emotions', 'assistant_emotions',
+            'scenario_category', 'generated_scenario', 'time_slot', 'regions', 'resolution_status'
+        ]
+    )
     
-    # Merge turns with dialogue metadata
-    dialogues = dialogues.drop('turns', axis=1).join(turns)
-    
+    # Rename columns
     dialogues.rename(columns={
         'utterance': 'User Utterance',
         'intent': 'Intent',
-        'assistant_response': 'Assistant Response'
+        'assistant_response': 'Assistant Response',
+        'turn_number': 'Turn Number'
     }, inplace=True)
+    
+    # Split 'time_slot' into separate columns
+    dialogues[['time_slot_start', 'time_slot_end', 'time_slot_description']] = pd.DataFrame(dialogues['time_slot'].tolist(), index=dialogues.index)
+    
+    # Handle possible missing values
+    dialogues['services'] = dialogues['services'].apply(lambda x: x if isinstance(x, list) else [])
+    dialogues['user_emotions'] = dialogues['user_emotions'].apply(lambda x: x if isinstance(x, list) else [])
+    dialogues['assistant_emotions'] = dialogues['assistant_emotions'].apply(lambda x: x if isinstance(x, list) else [])
+    dialogues['regions'] = dialogues['regions'].apply(lambda x: x if isinstance(x, list) else [])
     
     return dialogues
 
@@ -59,18 +72,18 @@ resolution_statuses = dialogues['resolution_status'].unique().tolist()
 selected_resolutions = st.sidebar.multiselect("Select Resolution Statuses", options=resolution_statuses, default=resolution_statuses)
 
 # Time Slot Filter
-time_slots = dialogues['time_slot'].unique().tolist()
+time_slots = dialogues['time_slot_description'].unique().tolist()
 selected_time_slots = st.sidebar.multiselect("Select Time Slots", options=time_slots, default=time_slots)
 
 # Region Filter
-regions = dialogues['regions'].explode().unique().tolist()
-selected_regions = st.sidebar.multiselect("Select Regions", options=regions, default=regions)
+all_regions = dialogues['regions'].explode().dropna().unique().tolist()
+selected_regions = st.sidebar.multiselect("Select Regions", options=all_regions, default=all_regions)
 
 # Apply filters
 filtered_dialogues = dialogues[
     (dialogues['scenario_category'].isin(selected_scenarios)) &
     (dialogues['resolution_status'].isin(selected_resolutions)) &
-    (dialogues['time_slot'].isin(selected_time_slots)) &
+    (dialogues['time_slot_description'].isin(selected_time_slots)) &
     (dialogues['regions'].apply(lambda x: any(region in x for region in selected_regions)))
 ]
 
@@ -85,14 +98,14 @@ with col1:
     st.metric("Total Dialogues", dialogues['dialogue_id'].nunique())
     st.metric("Total Turns", dialogues.shape[0])
 with col2:
-    st.metric("Unique Services", len(dialogues['services'].explode().unique()))
+    st.metric("Unique Services", len(pd.Series([item for sublist in dialogues['services'] for item in sublist]).unique()))
     st.metric("Unique Scenario Categories", len(dialogues['scenario_category'].unique()))
 with col3:
-    st.metric("Unique User Emotions", len(dialogues['user_emotions'].explode().unique()))
-    st.metric("Unique Assistant Emotions", len(dialogues['assistant_emotions'].explode().unique()))
+    st.metric("Unique User Emotions", len(pd.Series([item for sublist in dialogues['user_emotions'] for item in sublist]).unique()))
+    st.metric("Unique Assistant Emotions", len(pd.Series([item for sublist in dialogues['assistant_emotions'] for item in sublist]).unique()))
 with col4:
-    st.metric("Unique Regions", len(dialogues['regions'].explode().unique()))
-    st.metric("Unique Time Slots", len(dialogues['time_slot'].unique()))
+    st.metric("Unique Regions", len(pd.Series([item for sublist in dialogues['regions'] for item in sublist]).unique()))
+    st.metric("Resolution Statuses", len(dialogues['resolution_status'].unique()))
 
 # Main Dashboard Layout
 # Tabs for different sections
@@ -109,8 +122,8 @@ with tab1:
         total_turns = filtered_dialogues.shape[0]
         st.metric("Total Turns", total_turns)
     with col3:
-        unique_users = filtered_dialogues['user_emotions'].explode().nunique()
-        unique_assistants = filtered_dialogues['assistant_emotions'].explode().nunique()
+        unique_users = len(pd.Series([item for sublist in filtered_dialogues['user_emotions'] for item in sublist]).unique())
+        unique_assistants = len(pd.Series([item for sublist in filtered_dialogues['assistant_emotions'] for item in sublist]).unique())
         st.metric("Unique User Emotions", unique_users)
         st.metric("Unique Assistant Emotions", unique_assistants)
     st.markdown("### Dialogues Distribution")
@@ -127,7 +140,6 @@ with tab1:
     fig_services.update_traces(textposition='auto')
     st.plotly_chart(fig_services, use_container_width=True)
 
-# Tab 2: Emotions
 # Tab 2: Emotions
 with tab2:
     st.header("😊 Emotions Distribution")
@@ -160,6 +172,7 @@ with tab2:
         )
         fig_assistant_emotions.update_traces(textposition='auto')
         st.plotly_chart(fig_assistant_emotions, use_container_width=True)
+
 # Tab 3: Categories
 with tab3:
     st.header("📂 Scenario Categories")
@@ -200,7 +213,7 @@ with tab4:
 # Tab 5: Time Slots
 with tab5:
     st.header("⏰ Time Slot Distribution")
-    time_slot_counts = filtered_dialogues['time_slot'].value_counts()
+    time_slot_counts = filtered_dialogues['time_slot_description'].value_counts()
     fig_time_slots = px.bar(
         x=time_slot_counts.index,
         y=time_slot_counts.values,
@@ -267,8 +280,8 @@ with tab7:
             (filtered_dialogues['Intent'].str.contains(search_intent, case=False, na=False)) &
             (filtered_dialogues['User Utterance'].str.contains(search_utterance, case=False, na=False)) &
             (
-                filtered_dialogues['user_emotions'].apply(lambda x: any(search_emotion.lower() in emotion.lower() for emotion in x)) |
-                filtered_dialogues['assistant_emotions'].apply(lambda x: any(search_emotion.lower() in emotion.lower() for emotion in x))
+                filtered_dialogues['user_emotions'].apply(lambda x: search_emotion.lower() in [e.lower() for e in x]) |
+                filtered_dialogues['assistant_emotions'].apply(lambda x: search_emotion.lower() in [e.lower() for e in x])
             ) &
             (filtered_dialogues['Assistant Response'].str.contains(search_response, case=False, na=False))
         ]
@@ -276,7 +289,7 @@ with tab7:
         st.dataframe(
             search_filtered[['dialogue_id', 'services', 'User Utterance', 'Intent', 'Assistant Response',
                              'user_emotions', 'assistant_emotions', 'scenario_category',
-                             'time_slot', 'regions', 'resolution_status']]
+                             'time_slot_description', 'regions', 'resolution_status']]
         )
 
     # Intent Analysis
@@ -297,7 +310,7 @@ with tab7:
     st.subheader("Word Cloud of User Utterances")
     try:
         from wordcloud import WordCloud
-        text = " ".join(filtered_dialogues['User Utterance'])
+        text = " ".join(filtered_dialogues['User Utterance'].dropna())
         wordcloud = WordCloud(width=800, height=400, background_color='white').generate(text)
         fig, ax = plt.subplots(figsize=(10, 5))
         ax.imshow(wordcloud, interpolation='bilinear')
@@ -307,55 +320,37 @@ with tab7:
         st.warning("The WordCloud feature is not available. Please install the 'wordcloud' package to use this feature.")
         st.info("You can install it by running: pip install wordcloud")
 
-
-
+# Tab 8: Dialogue Viewer
 with tab8:
     st.header("📄 Dialogue Viewer")
 
-    # Load the JSON file
-    @st.cache_data
-    def load_dialogue_data(file_path):
-        with open(file_path, 'r') as file:
-            data = json.load(file)
-        return data
+    # Get unique dialogue IDs
+    dialogue_ids = dialogues['dialogue_id'].unique().tolist()
+    selected_dialogue_id = st.selectbox("Select Dialogue ID", options=dialogue_ids)
 
-    # Load the data
-    dialogue_data = load_dialogue_data('../generated_dialogues.json')
-
-    # Pagination for Dialogues
-    total_dialogues = len(dialogue_data)
-    dialogue_number = st.number_input("Dialogue Number", min_value=1, max_value=total_dialogues, value=1)
-
-    # Get the dialogue for the current page
-    dialogue = dialogue_data[dialogue_number - 1]
+    dialogue = dialogues[dialogues['dialogue_id'] == selected_dialogue_id]
 
     # Display dialogue information
-    st.subheader(f"Dialogue ID: {dialogue['dialogue_id']}")
-    st.write(f"Services: {', '.join(dialogue['services'])}")
-    st.write(f"Scenario Category: {dialogue['scenario_category']}")
-    st.write(f"Time Slot: {dialogue['time_slot']}")
-    st.write(f"Regions: {', '.join(dialogue['regions'])}")
-    st.write(f"Resolution Status: {dialogue['resolution_status']}")
-    st.write(f"Total Turns: {len(dialogue['turns'])}")
-
-    # Display the full conversation
-    st.subheader("Conversation:")
-    for turn in dialogue['turns']:
-        with st.chat_message("user"):
-            st.markdown(f"**User ({turn['turn_number']}):** {turn['utterance']}")
-            st.markdown(f"*Intent: {turn['intent']}*")
-        
-        with st.chat_message("assistant"):
-            st.markdown(f"**Assistant:** {turn['assistant_response']}")
+    st.subheader(f"Dialogue ID: {selected_dialogue_id}")
+    st.write(f"Services: {', '.join(set([item for sublist in dialogue['services'] for item in sublist]))}")
+    st.write(f"Scenario Category: {dialogue['scenario_category'].iloc[0]}")
+    st.write(f"Generated Scenario: {dialogue['generated_scenario'].iloc[0]}")
+    st.write(f"Time Slot: {dialogue['time_slot_description'].iloc[0]} ({int(dialogue['time_slot_start'].iloc[0]):02d}:00-{int(dialogue['time_slot_end'].iloc[0]):02d}:00)")
+    st.write(f"Regions: {', '.join(set([item for sublist in dialogue['regions'] for item in sublist]))}")
+    st.write(f"Resolution Status: {dialogue['resolution_status'].iloc[0]}")
+    st.write(f"Total Turns: {dialogue['num_lines'].iloc[0]}")
 
     # Display emotions
     st.subheader("Emotions:")
-    st.write(f"User Emotions: {', '.join(dialogue['user_emotions'])}")
-    st.write(f"Assistant Emotions: {', '.join(dialogue['assistant_emotions'])}")
+    st.write(f"User Emotions: {', '.join(set([item for sublist in dialogue['user_emotions'] for item in sublist]))}")
+    st.write(f"Assistant Emotions: {', '.join(set([item for sublist in dialogue['assistant_emotions'] for item in sublist]))}")
 
-    # Display generated scenario
-    st.subheader("Generated Scenario:")
-    st.write(dialogue['generated_scenario'])
+    # Display the full conversation
+    st.subheader("Conversation:")
+    for _, row in dialogue.sort_values('Turn Number').iterrows():
+        st.markdown(f"**User (Turn {int(row['Turn Number'])}):** {row['User Utterance']}")
+        st.markdown(f"*Intent: {row['Intent']}*")
+        st.markdown(f"**Assistant:** {row['Assistant Response']}")
+        st.markdown("---")
 
-    st.write(f"Showing dialogue {dialogue_number} of {total_dialogues}")
-
+    st.write(f"Showing dialogue {dialogue_ids.index(selected_dialogue_id)+1} of {len(dialogue_ids)}")
