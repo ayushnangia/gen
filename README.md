@@ -77,17 +77,7 @@ Before using the `capstone.py` script, ensure that your environment meets the fo
         ```
 4. **Run setup.py**:
 
-    
-        ```
         python setup.py
-        ```
-5. **Run alpha_flight.py**:
-
-        ```
-        python alpha_flight.py --total generations 10
-        ```
-        
-        Note: Can change other parameters too.
 
 
 ## Usage
