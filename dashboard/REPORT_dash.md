@@ -642,11 +642,10 @@ flowchart TD
     style C2d fill:#2c3e50,color:#ecf0f1
     style C3 fill:#2c3e50,color:#ecf0f1
     style C3a fill:#2c3e50,color:#ecf0f1
-    style C3b fill:#2c3e50,color:#ecf0f1
 
     C([🛠️ Data Processing])
     C --> C1([📄 Flatten Data])
-    C1 --> C1a([📊 Use pd.json_normalize()])
+    C1 --> C1a([📊 Convert Nested JSON to Tabular Format])
     C1a --> C2([🧹 Clean & Transform Data])
     C2 --> C2a([✏️ Rename Columns])
     C2 --> C2b([⏳ Split Time Slot])
@@ -654,7 +653,6 @@ flowchart TD
     C2 --> C2d([🔢 Ensure Correct Data Types])
     C2d --> C3([✨ Enrich Data])
     C3 --> C3a([😊 Compute Sentiment])
-    C3 --> C3b([🔍 Extract Entities])
 ```
 
 ---
