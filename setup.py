@@ -35,7 +35,7 @@ def download_and_save_dataset(dataset_name, save_path):
         return
 
     print(f"Downloading dataset: {dataset_name}")
-    dataset = load_dataset(dataset_name, download_mode="force_redownload")
+    dataset = load_dataset(dataset_name, download_mode="force_redownload", trust_remote_code=True)
     
     os.makedirs(save_path, exist_ok=True)
     
