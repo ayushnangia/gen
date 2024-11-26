@@ -8,11 +8,16 @@ import matplotlib.pyplot as plt
 import plotly.express as px
 from collections import Counter, defaultdict
 from wordcloud import WordCloud
-from textblob import TextBlob
 import re
 import plotly.graph_objects as go
-import plotly.express as px
-from collections import Counter, defaultdict
+import spacy
+from nltk.sentiment.vader import SentimentIntensityAnalyzer
+import time
+import warnings
+from itertools import combinations
+
+# Suppress warnings for cleaner output
+warnings.filterwarnings("ignore")
 
 # Set Streamlit page configuration
 st.set_page_config(
@@ -39,23 +44,51 @@ st.markdown("""
 # Title of the Dashboard
 st.title("📊 Dialogue Interaction Dashboard")
 
-@st.cache_data
+@st.cache_data(show_spinner=False)
 def load_data(uploaded_file):
-    data = json.loads(uploaded_file.getvalue().decode('utf-8'))
+    # Read data in chunks to handle large files efficiently
+    data = []
+    chunk_size = 10000  # Adjust based on your system's memory capacity
+    chunk = []
+    line_count = 0
 
-    # Data Validation
-    validate_data(data)
+    # Read JSONL file line by line
+    for line in uploaded_file:
+        line = line.decode('utf-8').strip()
+        if line:
+            chunk.append(json.loads(line))
+            line_count += 1
+            if line_count % chunk_size == 0:
+                # Process the chunk
+                dialogues_chunk = process_chunk(chunk)
+                data.append(dialogues_chunk)
+                chunk = []  # Reset chunk
 
+    # Process any remaining data
+    if chunk:
+        dialogues_chunk = process_chunk(chunk)
+        data.append(dialogues_chunk)
+
+    # Concatenate all chunks
+    dialogues = pd.concat(data, ignore_index=True)
+
+    return dialogues
+
+def process_chunk(chunk):
     # Flatten the data using pd.json_normalize
-    dialogues = pd.json_normalize(
-        data,
+    dialogues_chunk = pd.json_normalize(
+        chunk,
         record_path='turns',
         meta=[
             'dialogue_id', 'services', 'num_lines', 'user_emotions', 'assistant_emotions',
             'scenario_category', 'generated_scenario', 'time_slot', 'regions', 'resolution_status'
         ]
     )
+    # Clean and process the chunk
+    dialogues_chunk = clean_data(dialogues_chunk)
+    return dialogues_chunk
 
+def clean_data(dialogues):
     # Rename columns
     dialogues.rename(columns={
         'utterance': 'User Utterance',
@@ -80,168 +113,84 @@ def load_data(uploaded_file):
     dialogues['time_slot_start'] = dialogues['time_slot_start'].astype(int)
     dialogues['time_slot_end'] = dialogues['time_slot_end'].astype(int)
 
+    # Perform validation
+    validate_data(dialogues)
+
+    # Create string representations of the list columns for efficient filtering
+    dialogues['regions_str'] = dialogues['regions'].str.join('||')
+    dialogues['services_str'] = dialogues['services'].str.join('||')
+    dialogues['user_emotions_str'] = dialogues['user_emotions'].str.join('||')
+    dialogues['assistant_emotions_str'] = dialogues['assistant_emotions'].str.join('||')
+
     return dialogues
 
-def validate_data(data):
+def validate_data(dialogues):
     """
     Validates the structure and content of the data.
 
     Args:
-        data (list): List of dialogues loaded from the JSON file.
+        dialogues (pd.DataFrame): Flattened DataFrame of dialogues.
 
     Raises:
         ValueError: If any required fields are missing or data types are incorrect.
     """
-    required_fields = {'dialogue_id', 'services', 'turns', 'num_lines', 'user_emotions', 'assistant_emotions',
-                       'scenario_category', 'generated_scenario', 'time_slot', 'regions', 'resolution_status'}
-    required_turn_fields = {'turn_number', 'utterance', 'intent', 'assistant_response'}
+    required_columns = ['dialogue_id', 'services', 'num_lines', 'user_emotions', 'assistant_emotions',
+                        'scenario_category', 'generated_scenario', 'time_slot_start', 'time_slot_end',
+                        'time_slot_description', 'regions', 'resolution_status', 'User Utterance', 'Intent',
+                        'Assistant Response', 'Turn Number']
+    missing_columns = set(required_columns) - set(dialogues.columns)
+    if missing_columns:
+        st.error(f"Data is missing required columns: {', '.join(missing_columns)}")
+        st.stop()
 
-    for dialogue in data:
-        dialogue_id = dialogue.get('dialogue_id', 'Unknown')
-        # Check for missing fields in dialogue
-        missing_fields = required_fields - dialogue.keys()
-        if missing_fields:
-            st.error(f"Dialogue '{dialogue_id}' is missing required fields: {', '.join(missing_fields)}")
-            st.stop()
+    # Check data types
+    try:
+        dialogues['num_lines'] = dialogues['num_lines'].astype(int)
+        dialogues['time_slot_start'] = dialogues['time_slot_start'].astype(int)
+        dialogues['time_slot_end'] = dialogues['time_slot_end'].astype(int)
+        dialogues['Turn Number'] = dialogues['Turn Number'].astype(int)
+    except Exception as e:
+        st.error(f"Data type conversion error: {e}")
+        st.stop()
 
-        # Validate data types
-        if not isinstance(dialogue['services'], list):
-            st.error(f"Dialogue '{dialogue_id}' - 'services' must be a list.")
-            st.stop()
-        if not isinstance(dialogue['user_emotions'], list):
-            st.error(f"Dialogue '{dialogue_id}' - 'user_emotions' must be a list.")
-            st.stop()
-        if not isinstance(dialogue['assistant_emotions'], list):
-            st.error(f"Dialogue '{dialogue_id}' - 'assistant_emotions' must be a list.")
-            st.stop()
-        if not isinstance(dialogue['regions'], list):
-            st.error(f"Dialogue '{dialogue_id}' - 'regions' must be a list.")
-            st.stop()
-        if not isinstance(dialogue['num_lines'], int):
-            st.error(f"Dialogue '{dialogue_id}' - 'num_lines' must be an integer.")
-            st.stop()
-        if not isinstance(dialogue['time_slot'], list) or len(dialogue['time_slot']) != 3:
-            st.error(f"Dialogue '{dialogue_id}' - 'time_slot' must be a list of three elements.")
-            st.stop()
+    # Check for missing values in key columns
+    required_columns_no_lists = ['dialogue_id', 'scenario_category', 'generated_scenario', 'resolution_status',
+                                 'User Utterance', 'Intent', 'Assistant Response', 'Turn Number']
+    if dialogues[required_columns_no_lists].isnull().any().any():
+        st.error("Data contains missing values in required columns.")
+        st.stop()
 
-        # Validate 'turns' structure
-        if not isinstance(dialogue['turns'], list):
-            st.error(f"Dialogue '{dialogue_id}' - 'turns' must be a list.")
-            st.stop()
-        for turn in dialogue['turns']:
-            missing_turn_fields = required_turn_fields - turn.keys()
-            if missing_turn_fields:
-                st.error(f"Turn {turn.get('turn_number', 'Unknown')} in dialogue '{dialogue_id}' is missing required fields: {', '.join(missing_turn_fields)}")
-                st.stop()
-
-            # Validate turn data types
-            if not isinstance(turn['turn_number'], int):
-                st.error(f"Turn number in dialogue '{dialogue_id}' must be an integer.")
-                st.stop()
-            if not isinstance(turn['utterance'], str) or not turn['utterance'].strip():
-                st.error(f"Turn {turn['turn_number']} in dialogue '{dialogue_id}' has an invalid 'utterance'.")
-                st.stop()
-            if not isinstance(turn['intent'], str) or not turn['intent'].strip():
-                st.error(f"Turn {turn['turn_number']} in dialogue '{dialogue_id}' has an invalid 'intent'.")
-                st.stop()
-            if not isinstance(turn['assistant_response'], str) or not turn['assistant_response'].strip():
-                st.error(f"Turn {turn['turn_number']} in dialogue '{dialogue_id}' has an invalid 'assistant_response'.")
-                st.stop()
-
-    # Optionally, return True if validation passes
     return True
 
-def compute_sentiment(text):
-    return TextBlob(text).sentiment.polarity
+# Cache the sentiment analyzer to avoid reloading
+@st.cache_resource
+def load_sentiment_analyzer():
+    return SentimentIntensityAnalyzer()
 
-def extract_entities(text):
-    # Simple regex patterns for demonstration
-    date_pattern = r'\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|' \
-                   r'May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|' \
-                   r'Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\b'
-    time_pattern = r'\b(?:[01]?\d|2[0-3]):[0-5]\d\b'
-    location_pattern = r'\b[A-Z][a-z]+(?: [A-Z][a-z]+)*\b'  # Simple pattern for capitalized words
+# Cache the SpaCy model to avoid reloading
+@st.cache_resource
+def load_spacy_model():
+    return spacy.load('en_core_web_sm', disable=['parser', 'tagger', 'lemmatizer'])
 
-    dates = re.findall(date_pattern, text)
-    times = re.findall(time_pattern, text)
-    locations = re.findall(location_pattern, text)
+# Initialize sentiment analyzer and NLP model
+analyzer = load_sentiment_analyzer()
+nlp = load_spacy_model()
 
-    return {'dates': dates, 'times': times, 'locations': locations}
+def compute_sentiment_vader(text):
+    return analyzer.polarity_scores(text)['compound']
 
-CORE_SERVICES = ['hotel', 'restaurant', 'train', 'attraction', 'taxi', 'bus', 'hospital', 'flight']
-
-LOGICAL_COMBINATIONS = {
-    'double': [
-        # Hospital-related combinations
-        ['hospital', 'taxi'],
-        ['hospital', 'hotel'],
-        # Flight-related combinations
-        ['flight', 'taxi'],
-        ['flight', 'hotel'],
-        ['flight', 'train'],
-        ['flight', 'bus'],
-        ['flight', 'restaurant'],
-        # Travel & Accommodation
-        ['hotel', 'taxi'],
-        ['hotel', 'train'],
-        ['hotel', 'bus'],
-        # Dining & Entertainment
-        ['restaurant', 'taxi'],
-        ['restaurant', 'attraction'],
-        ['attraction', 'taxi'],
-        # Transport Connections
-        ['train', 'taxi'],
-        ['bus', 'taxi'],
-        ['train', 'bus'],
-        # Common Pairings
-        ['hotel', 'restaurant'],
-        ['attraction', 'restaurant']
-    ],
-    'triple': [
-        # Hospital-related combinations
-        ['hospital', 'taxi', 'hotel'],
-        ['hospital', 'hotel', 'restaurant'],
-        # Travel & Stay Combinations
-        ['hotel', 'restaurant', 'taxi'],
-        ['hotel', 'train', 'taxi'],
-        ['hotel', 'bus', 'taxi'],
-        # Tourism Combinations
-        ['attraction', 'restaurant', 'taxi'],
-        ['attraction', 'hotel', 'taxi'],
-        ['attraction', 'train', 'taxi'],
-        # Extended Travel Plans
-        ['train', 'hotel', 'restaurant'],
-        ['bus', 'hotel', 'restaurant'],
-        ['train', 'restaurant', 'taxi'],
-        # Flight-related triples
-        ['flight', 'hotel', 'taxi'],
-        ['flight', 'train', 'taxi'],
-        ['flight', 'bus', 'taxi'],
-        ['flight', 'restaurant', 'taxi'],
-    ],
-    'quadruple': [
-        # Hospital-related combinations
-        ['hospital', 'hotel', 'restaurant', 'taxi'],
-        # Full Tourism Package
-        ['hotel', 'restaurant', 'attraction', 'taxi'],
-        ['train', 'hotel', 'restaurant', 'taxi'],
-        ['bus', 'hotel', 'restaurant', 'taxi'],
-        # Extended Tourism
-        ['train', 'hotel', 'attraction', 'taxi'],
-        ['bus', 'hotel', 'attraction', 'taxi'],
-        ['flight', 'hotel', 'restaurant', 'taxi'],
-        ['flight', 'train', 'hotel', 'taxi'],
-        ['flight', 'bus', 'hotel', 'taxi'],
-    ]
-}
+def extract_entities_spacy(text):
+    doc = nlp(text)
+    return [(ent.text, ent.label_) for ent in doc.ents]
 
 # File uploader
-data_file = st.file_uploader("Upload JSON file", type=["json"])
+data_file = st.file_uploader("Upload JSONL file", type=["jsonl"])
 
 if data_file:
-    dialogues = load_data(data_file)
+    with st.spinner('Loading data...'):
+        dialogues = load_data(data_file)
 else:
-    st.warning("Please upload a JSON file to proceed.")
+    st.warning("Please upload a JSONL file to proceed.")
     st.stop()
 
 # Sidebar Filters
@@ -260,18 +209,18 @@ time_slots = dialogues['time_slot_description'].unique().tolist()
 selected_time_slots = st.sidebar.multiselect("Select Time Slots", options=time_slots, default=time_slots)
 
 # Region Filter
-all_regions = dialogues['regions'].explode().dropna().unique().tolist()
+all_regions = pd.Series([region for regions in dialogues['regions'] for region in regions]).unique().tolist()
 selected_regions = st.sidebar.multiselect("Select Regions", options=all_regions, default=all_regions)
 
 # Service Filter
-all_services = dialogues['services'].explode().dropna().unique().tolist()
+all_services = pd.Series([service for services in dialogues['services'] for service in services]).unique().tolist()
 selected_services = st.sidebar.multiselect("Select Services", options=all_services, default=all_services)
 
 # Emotion Filter
-all_user_emotions = dialogues['user_emotions'].explode().dropna().unique().tolist()
+all_user_emotions = pd.Series([emotion for emotions in dialogues['user_emotions'] for emotion in emotions]).unique().tolist()
 selected_user_emotions = st.sidebar.multiselect("Select User Emotions", options=all_user_emotions, default=all_user_emotions)
 
-all_assistant_emotions = dialogues['assistant_emotions'].explode().dropna().unique().tolist()
+all_assistant_emotions = pd.Series([emotion for emotions in dialogues['assistant_emotions'] for emotion in emotions]).unique().tolist()
 selected_assistant_emotions = st.sidebar.multiselect("Select Assistant Emotions", options=all_assistant_emotions, default=all_assistant_emotions)
 
 # Apply filters
@@ -279,19 +228,18 @@ filtered_dialogues = dialogues[
     (dialogues['scenario_category'].isin(selected_scenarios)) &
     (dialogues['resolution_status'].isin(selected_resolutions)) &
     (dialogues['time_slot_description'].isin(selected_time_slots)) &
-    (dialogues['regions'].apply(lambda x: any(region in x for region in selected_regions))) &
-    (dialogues['services'].apply(lambda x: any(service in x for service in selected_services))) &
-    (dialogues['user_emotions'].apply(lambda x: any(emotion in x for emotion in selected_user_emotions))) &
-    (dialogues['assistant_emotions'].apply(lambda x: any(emotion in x for emotion in selected_assistant_emotions)))
+    (dialogues['regions_str'].str.contains('|'.join(selected_regions))) &
+    (dialogues['services_str'].str.contains('|'.join(selected_services))) &
+    (dialogues['user_emotions_str'].str.contains('|'.join(selected_user_emotions))) &
+    (dialogues['assistant_emotions_str'].str.contains('|'.join(selected_assistant_emotions)))
 ]
 
-# Add sentiment analysis
-filtered_dialogues['User Sentiment'] = filtered_dialogues['User Utterance'].apply(lambda x: compute_sentiment(str(x)))
-filtered_dialogues['Assistant Sentiment'] = filtered_dialogues['Assistant Response'].apply(lambda x: compute_sentiment(str(x)))
-
-# Add entity extraction
-filtered_dialogues['User Entities'] = filtered_dialogues['User Utterance'].apply(lambda x: extract_entities(str(x)))
-filtered_dialogues['Assistant Entities'] = filtered_dialogues['Assistant Response'].apply(lambda x: extract_entities(str(x)))
+# Limit data for heavy computations
+max_sample_size = st.sidebar.number_input("Max Sample Size for Heavy Computations", min_value=1000, max_value=20000, value=5000, step=1000)
+if len(filtered_dialogues) > max_sample_size:
+    sample_dialogues = filtered_dialogues.sample(n=max_sample_size, random_state=42)
+else:
+    sample_dialogues = filtered_dialogues.copy()
 
 st.sidebar.markdown("---")
 st.sidebar.markdown(f"**Total Dialogues:** {filtered_dialogues['dialogue_id'].nunique()}")
@@ -304,13 +252,13 @@ with col1:
     st.metric("Total Dialogues", dialogues['dialogue_id'].nunique())
     st.metric("Total Turns", dialogues.shape[0])
 with col2:
-    st.metric("Unique Services", len(pd.Series([item for sublist in dialogues['services'] for item in sublist]).unique()))
+    st.metric("Unique Services", len(all_services))
     st.metric("Unique Scenario Categories", len(dialogues['scenario_category'].unique()))
 with col3:
-    st.metric("Unique User Emotions", len(pd.Series([item for sublist in dialogues['user_emotions'] for item in sublist]).unique()))
-    st.metric("Unique Assistant Emotions", len(pd.Series([item for sublist in dialogues['assistant_emotions'] for item in sublist]).unique()))
+    st.metric("Unique User Emotions", len(all_user_emotions))
+    st.metric("Unique Assistant Emotions", len(all_assistant_emotions))
 with col4:
-    st.metric("Unique Regions", len(pd.Series([item for sublist in dialogues['regions'] for item in sublist]).unique()))
+    st.metric("Unique Regions", len(all_regions))
     st.metric("Resolution Statuses", len(dialogues['resolution_status'].unique()))
 
 # Main Dashboard Layout
@@ -320,22 +268,22 @@ tabs = st.tabs(tab_names)
 
 with tabs[0]:
     st.header("🔍 Overview")
-    
+
     # First row - Service Usage Statistics
     col1, col2 = st.columns([2, 1])
-    
+
     with col1:
         st.subheader("Single Service Usage")
-        
+
         # Get total unique dialogues
         total_dialogues = filtered_dialogues['dialogue_id'].nunique()
-        
+
         # Filter for dialogues that use only one service and drop duplicates to get unique dialogues
         single_service_dialogues = filtered_dialogues[filtered_dialogues['services'].map(len) == 1].drop_duplicates(subset='dialogue_id')
-        
+
         # Get service counts for single-service dialogues using str[0] for robustness
         service_counts = single_service_dialogues['services'].str[0].value_counts()
-        
+
         # Donut chart for single services
         fig_standalone = px.pie(
             values=service_counts.values,
@@ -344,7 +292,7 @@ with tabs[0]:
             hole=0.6,
             color_discrete_sequence=px.colors.qualitative.Set3
         )
-        
+
         fig_standalone.update_traces(
             textposition='outside',
             textinfo='label+percent+value',
@@ -360,28 +308,33 @@ with tabs[0]:
                 x=1
             )
         )
-        
+
         st.plotly_chart(fig_standalone, use_container_width=True)
-    
+
     with col2:
         st.subheader("Quick Stats")
         # Count single and multi-service dialogues
         service_counts_per_dialogue = filtered_dialogues.groupby('dialogue_id')['services'].first().apply(len)
         single_service_count = (service_counts_per_dialogue == 1).sum()
         multi_service_count = (service_counts_per_dialogue > 1).sum()
-        
+
         st.metric("Total Dialogues", total_dialogues)
         st.metric("Single Service Dialogues", single_service_count)
         st.metric("Multi-Service Dialogues", multi_service_count)
-        
+
         # Add percentage breakdown
         st.write("**Percentage Breakdown:**")
         st.write(f"- Single Service: {single_service_count/total_dialogues*100:.1f}%")
         st.write(f"- Multi Service: {multi_service_count/total_dialogues*100:.1f}%")
-    
-    
+
+        # Count of dialogues by number of services
+        service_counts_distribution = service_counts_per_dialogue.value_counts().sort_index()
+        st.write("**Dialogues by Number of Services Used:**")
+        for num_services, count in service_counts_distribution.items():
+            st.write(f"- {num_services} services: {count} dialogues")
+
     st.subheader("Multi-Service Analysis")
-    
+
     # Filter multi-service dialogues ensuring unique service counts per dialogue
     multi_service_dialogues = filtered_dialogues[
         filtered_dialogues['services'].map(len) > 1
@@ -389,98 +342,129 @@ with tabs[0]:
 
     # Ensure services are unique per dialogue to prevent overcounting
     multi_service_dialogues_unique = multi_service_dialogues.copy()
-    multi_service_dialogues_unique['services'] = multi_service_dialogues_unique['services'].apply(lambda x: list(set(x)) if isinstance(x, list) else [])
+    multi_service_dialogues_unique['services_set'] = multi_service_dialogues_unique['services'].apply(lambda x: set(x) if isinstance(x, list) else set())
 
     # Create tabs for different types of analysis
     multi_tabs = st.tabs(["Service Pairs", "Service Triples", "Service Quadruples"])
+    def count_combinations(dialogues_df, combination_size):
+        # Each dialogue should only be counted once
+        combination_counts = defaultdict(int)
+        
+        # Group by dialogue_id to ensure we only count each dialogue once
+        for dialogue_id, group in dialogues_df.groupby('dialogue_id'):
+            # Take the first row's services since they should be the same for the dialogue
+            services = sorted(group.iloc[0]['services'])
+            if len(services) == combination_size:
+                combo_key = '+'.join(services)
+                combination_counts[combo_key] += 1
+                
+        return combination_counts
 
+    # When preparing the data for analysis
+    multi_service_dialogues_unique = filtered_dialogues[
+        filtered_dialogues['services'].map(len) > 1
+    ].drop_duplicates(subset=['dialogue_id'])  # Ensure we have unique dialogues
     with multi_tabs[0]:
         st.subheader("Common Service Pairs")
-        pair_counts = defaultdict(int)
+
+        # Count dialogues with exactly 2 services
+        valid_dialogues = multi_service_dialogues_unique[
+            multi_service_dialogues_unique['services'].map(len) == 2  # Changed from >= to ==
+        ]
+        pair_counts = count_combinations(valid_dialogues, 2)
         
-        for _, row in multi_service_dialogues_unique.iterrows():
-            services_set = set(row['services'])
-            for pair in LOGICAL_COMBINATIONS['double']:
-                if set(pair).issubset(services_set):
-                    pair_key = '+'.join(sorted(pair))
-                    pair_counts[pair_key] += 1  # Increment count per dialogue containing the pair
-        
+        total_pairs = sum(pair_counts.values())  # This should match len(valid_dialogues)
+        st.write(f"**Number of Dialogues with Exactly 2 Services:** {total_pairs}")
+
         if pair_counts:
             pair_df = pd.DataFrame(list(pair_counts.items()), columns=['Pair', 'Count'])
             pair_df = pair_df.sort_values('Count', ascending=True)
+            
+            # Percentage is now based on total dialogues with exactly 2 services
+            pair_df['Percentage'] = (pair_df['Count'] / total_pairs * 100).round(1)
             
             fig_pairs = px.bar(
                 pair_df,
                 x='Count',
                 y='Pair',
                 orientation='h',
-                title='Common Service Pairs in Multi-Service Dialogues',
+                title=f'Service Pairs Distribution (n={total_pairs})',
+                labels={'Count': 'Number of Dialogues', 'Pair': 'Service Pair'},
                 color='Count',
-                color_continuous_scale='Viridis'
+                color_continuous_scale='Viridis',
+                text=pair_df['Percentage'].apply(lambda x: f'{x}%')
             )
             fig_pairs.update_layout(height=max(400, len(pair_counts) * 30))
+            fig_pairs.update_traces(textposition='outside')
             st.plotly_chart(fig_pairs, use_container_width=True)
-        else:
-            st.write("No service pairs found in the data.")
-    
+    # ... existing code ...
+
     with multi_tabs[1]:
         st.subheader("Common Service Triples")
-        triple_counts = defaultdict(int)
+
+        # Count dialogues with exactly 3 services
+        valid_dialogues = multi_service_dialogues_unique[
+            multi_service_dialogues_unique['services'].map(len) == 3
+        ]
+        triple_counts = count_combinations(valid_dialogues, 3)
         
-        for _, row in multi_service_dialogues_unique.iterrows():
-            services_set = set(row['services'])
-            for triple in LOGICAL_COMBINATIONS['triple']:
-                if set(triple).issubset(services_set):
-                    triple_key = '+'.join(sorted(triple))
-                    triple_counts[triple_key] += 1  # Increment count per dialogue containing the triple
-        
+        total_triples = sum(triple_counts.values())
+        st.write(f"**Number of Dialogues with Exactly 3 Services:** {total_triples}")
+
         if triple_counts:
             triple_df = pd.DataFrame(list(triple_counts.items()), columns=['Triple', 'Count'])
             triple_df = triple_df.sort_values('Count', ascending=True)
+            
+            triple_df['Percentage'] = (triple_df['Count'] / total_triples * 100).round(1)
             
             fig_triples = px.bar(
                 triple_df,
                 x='Count',
                 y='Triple',
                 orientation='h',
-                title='Common Service Triples in Multi-Service Dialogues',
+                title=f'Service Triples Distribution (n={total_triples})',
+                labels={'Count': 'Number of Dialogues', 'Triple': 'Service Triple'},
                 color='Count',
-                color_continuous_scale='Viridis'
+                color_continuous_scale='Viridis',
+                text=triple_df['Percentage'].apply(lambda x: f'{x}%')
             )
             fig_triples.update_layout(height=max(400, len(triple_counts) * 30))
+            fig_triples.update_traces(textposition='outside')
             st.plotly_chart(fig_triples, use_container_width=True)
-        else:
-            st.write("No service triples found in the data.")
-    
+
     with multi_tabs[2]:
         st.subheader("Common Service Quadruples")
-        quad_counts = defaultdict(int)
+
+        # Count dialogues with exactly 4 services
+        valid_dialogues = multi_service_dialogues_unique[
+            multi_service_dialogues_unique['services'].map(len) == 4
+        ]
+        quad_counts = count_combinations(valid_dialogues, 4)
         
-        for _, row in multi_service_dialogues_unique.iterrows():
-            services_set = set(row['services'])
-            for quad in LOGICAL_COMBINATIONS['quadruple']:
-                if set(quad).issubset(services_set):
-                    quad_key = '+'.join(sorted(quad))
-                    quad_counts[quad_key] += 1  # Increment count per dialogue containing the quadruple
-        
+        total_quads = sum(quad_counts.values())
+        st.write(f"**Number of Dialogues with Exactly 4 Services:** {total_quads}")
+
         if quad_counts:
             quad_df = pd.DataFrame(list(quad_counts.items()), columns=['Quadruple', 'Count'])
             quad_df = quad_df.sort_values('Count', ascending=True)
+            
+            quad_df['Percentage'] = (quad_df['Count'] / total_quads * 100).round(1)
             
             fig_quads = px.bar(
                 quad_df,
                 x='Count',
                 y='Quadruple',
                 orientation='h',
-                title='Common Service Quadruples in Multi-Service Dialogues',
+                title=f'Service Quadruples Distribution (n={total_quads})',
+                labels={'Count': 'Number of Dialogues', 'Quadruple': 'Service Quadruple'},
                 color='Count',
-                color_continuous_scale='Viridis'
+                color_continuous_scale='Viridis',
+                text=quad_df['Percentage'].apply(lambda x: f'{x}%')
             )
             fig_quads.update_layout(height=max(400, len(quad_counts) * 30))
+            fig_quads.update_traces(textposition='outside')
             st.plotly_chart(fig_quads, use_container_width=True)
-        else:
-            st.write("No service quadruples found in the data.")
-    
+
 with tabs[1]:
     st.header("😊 Emotions Distribution")
     tab2_sub1, tab2_sub2 = st.columns(2)
@@ -539,7 +523,6 @@ with tabs[2]:
     fig_scenarios.update_traces(textposition='outside')
     st.plotly_chart(fig_scenarios, use_container_width=True)
 
-
 with tabs[3]:
     st.header("✅ Resolution Status")
     resolution_counts = filtered_dialogues['resolution_status'].value_counts()
@@ -595,7 +578,12 @@ with tabs[4]:
 
 with tabs[5]:
     st.header("🌍 Regional Distribution")
-    region_counts = filtered_dialogues['regions'].explode().value_counts()
+
+    # Explode regions and drop duplicates to avoid overcounting
+    dialogues_regions = filtered_dialogues.explode('regions')
+    dialogues_regions = dialogues_regions.drop_duplicates(subset=['dialogue_id', 'regions'])
+
+    region_counts = dialogues_regions['regions'].value_counts()
     fig_regions = px.bar(
         x=region_counts.values,
         y=region_counts.index,
@@ -608,13 +596,9 @@ with tabs[5]:
     )
     fig_regions.update_traces(textposition='outside')
     st.plotly_chart(fig_regions, use_container_width=True)
-    
+
     # Get top 10 regions by dialogue count
-    top_regions = (filtered_dialogues.explode('regions')
-                .groupby('regions')
-                .size()
-                .nlargest(10)
-                .index)
+    top_regions = region_counts.head(10).index
 
     # Get top 5 scenario categories
     top_categories = (filtered_dialogues['scenario_category']
@@ -623,14 +607,14 @@ with tabs[5]:
                     .index)
 
     # Filter data for top regions and categories
-    dialogues_summary = (filtered_dialogues[filtered_dialogues['scenario_category'].isin(top_categories)]
-                        .explode('regions')
+    dialogues_summary = (dialogues_regions[dialogues_regions['scenario_category'].isin(top_categories)]
                         .query('regions in @top_regions')
+                        .drop_duplicates(subset=['dialogue_id', 'regions', 'scenario_category'])
                         .groupby(['regions', 'scenario_category'])
                         .size()
                         .reset_index(name='count'))
 
-    # Create a simpler bar chart
+    # Create a stacked bar chart
     fig_region_scenario = px.bar(
         dialogues_summary,
         x='regions',
@@ -640,16 +624,16 @@ with tabs[5]:
         labels={
             'regions': 'Region',
             'count': 'Number of Dialogues',
-            'scenario_category': 'Category'
+            'scenario_category': 'Scenario Category'
         },
-        barmode='stack'  # Stack bars for clearer view
+        barmode='stack'
     )
 
-    # Clean up the layout
+    # Adjust layout
     fig_region_scenario.update_layout(
         xaxis_tickangle=-45,
         showlegend=True,
-        legend_title_text='Category',
+        legend_title_text='Scenario Category',
         height=500,
         legend=dict(
             orientation="h",
@@ -662,11 +646,9 @@ with tabs[5]:
 
     st.plotly_chart(fig_region_scenario, use_container_width=True)
 
-
-
 with tabs[6]:
     st.header("📈 Sentiment Analysis")
-    
+
     st.markdown("""
         ### What is Sentiment Analysis?
         Sentiment analysis helps us understand the emotional tone of conversations by analyzing the text. 
@@ -676,10 +658,15 @@ with tabs[6]:
         - **+1.0** (Very Positive)
     """)
 
+    # Perform sentiment analysis on the sample
+    with st.spinner('Performing sentiment analysis...'):
+        sample_dialogues['User Sentiment'] = sample_dialogues['User Utterance'].apply(lambda x: compute_sentiment_vader(str(x)))
+        sample_dialogues['Assistant Sentiment'] = sample_dialogues['Assistant Response'].apply(lambda x: compute_sentiment_vader(str(x)))
+
     # Calculate basic statistics
-    avg_user_sentiment = filtered_dialogues['User Sentiment'].mean()
-    avg_assistant_sentiment = filtered_dialogues['Assistant Sentiment'].mean()
-    
+    avg_user_sentiment = sample_dialogues['User Sentiment'].mean()
+    avg_assistant_sentiment = sample_dialogues['Assistant Sentiment'].mean()
+
     # Display key metrics
     col1, col2 = st.columns(2)
     with col1:
@@ -687,19 +674,19 @@ with tabs[6]:
             "Average User Sentiment", 
             f"{avg_user_sentiment:.2f}",
             delta=None,
-            help="Average sentiment score of all user messages"
+            help="Average sentiment score of user messages"
         )
     with col2:
         st.metric(
             "Average Assistant Sentiment",
             f"{avg_assistant_sentiment:.2f}",
             delta=None,
-            help="Average sentiment score of all assistant responses"
+            help="Average sentiment score of assistant responses"
         )
 
     # Simple bar chart comparing sentiment categories
     st.subheader("😊 Distribution of Sentiments")
-    
+
     def get_sentiment_category(score):
         if score > 0.1:
             return "Positive"
@@ -707,13 +694,13 @@ with tabs[6]:
             return "Negative"
         else:
             return "Neutral"
-    
-    filtered_dialogues['User Sentiment Category'] = filtered_dialogues['User Sentiment'].apply(get_sentiment_category)
-    filtered_dialogues['Assistant Sentiment Category'] = filtered_dialogues['Assistant Sentiment'].apply(get_sentiment_category)
-    
-    user_sentiment_counts = filtered_dialogues['User Sentiment Category'].value_counts()
-    assistant_sentiment_counts = filtered_dialogues['Assistant Sentiment Category'].value_counts()
-    
+
+    sample_dialogues['User Sentiment Category'] = sample_dialogues['User Sentiment'].apply(get_sentiment_category)
+    sample_dialogues['Assistant Sentiment Category'] = sample_dialogues['Assistant Sentiment'].apply(get_sentiment_category)
+
+    user_sentiment_counts = sample_dialogues['User Sentiment Category'].value_counts()
+    assistant_sentiment_counts = sample_dialogues['Assistant Sentiment Category'].value_counts()
+
     fig = go.Figure(data=[
         go.Bar(name='User', x=['Positive', 'Neutral', 'Negative'], 
                y=[user_sentiment_counts.get('Positive', 0),
@@ -724,56 +711,56 @@ with tabs[6]:
                   assistant_sentiment_counts.get('Neutral', 0),
                   assistant_sentiment_counts.get('Negative', 0)])
     ])
-    
+
     fig.update_layout(
         title="Comparison of User and Assistant Sentiments",
         xaxis_title="Sentiment Category",
         yaxis_title="Number of Messages",
         barmode='group'
     )
-    
+
     st.plotly_chart(fig, use_container_width=True)
 
     # Show some example messages
     st.subheader("📝 Example Messages")
-    
+
     col1, col2, col3 = st.columns(3)
-    
+
     with col1:
         st.markdown("### 😊 Most Positive")
-        most_positive = filtered_dialogues.loc[filtered_dialogues['User Sentiment'].idxmax()]
+        most_positive = sample_dialogues.loc[sample_dialogues['User Sentiment'].idxmax()]
         st.info(f"Score: {most_positive['User Sentiment']:.2f}\n\n{most_positive['User Utterance']}")
-        
+
     with col2:
         st.markdown("### 😐 Most Neutral")
-        neutral_idx = (filtered_dialogues['User Sentiment'] - 0).abs().idxmin()
-        most_neutral = filtered_dialogues.loc[neutral_idx]
+        neutral_idx = (sample_dialogues['User Sentiment'] - 0).abs().idxmin()
+        most_neutral = sample_dialogues.loc[neutral_idx]
         st.info(f"Score: {most_neutral['User Sentiment']:.2f}\n\n{most_neutral['User Utterance']}")
-        
+
     with col3:
         st.markdown("### 😔 Most Negative")
-        most_negative = filtered_dialogues.loc[filtered_dialogues['User Sentiment'].idxmin()]
+        most_negative = sample_dialogues.loc[sample_dialogues['User Sentiment'].idxmin()]
         st.info(f"Score: {most_negative['User Sentiment']:.2f}\n\n{most_negative['User Utterance']}")
 
     # Key Findings
     st.subheader("🔍 Key Findings")
-    
+
     findings = []
-    
+
     # Compare average sentiments
     if avg_user_sentiment > avg_assistant_sentiment:
         findings.append("Users generally express more positive sentiments than the assistant.")
     else:
         findings.append("The assistant generally maintains a more positive tone than users.")
-    
+
     # Check most common sentiment
     most_common_user = user_sentiment_counts.index[0]
     findings.append(f"The most common sentiment from users is {most_common_user.lower()}.")
-    
+
     # Calculate percentage of neutral responses
-    neutral_percentage = (user_sentiment_counts.get('Neutral', 0) / len(filtered_dialogues)) * 100
+    neutral_percentage = (user_sentiment_counts.get('Neutral', 0) / len(sample_dialogues)) * 100
     findings.append(f"Approximately {neutral_percentage:.1f}% of user messages are neutral in tone.")
-    
+
     for finding in findings:
         st.markdown(f"- {finding}")
 
@@ -782,26 +769,20 @@ with tabs[6]:
         - **Positive sentiment** often indicates satisfaction, agreement, or happiness
         - **Neutral sentiment** typically appears in factual statements or simple queries
         - **Negative sentiment** might show frustration, disagreement, or problems
-        
+
         This analysis helps us understand the overall tone of conversations and how well the assistant maintains a positive interaction.
     """)
-
-
 
 with tabs[7]:
     st.header("🔬 Advanced Analysis")
 
     st.subheader("Word Cloud Analysis")
 
-    # Text preprocessing
-    def preprocess_text(text):
-        # Convert to lowercase
-        text = text.lower()
-        # Remove special characters and numbers
-        text = re.sub(r'[^a-zA-Z\s]', '', text)
-        # Remove extra whitespace
-        text = ' '.join(text.split())
-        return text
+    # Prepare text for word cloud
+    text = " ".join(sample_dialogues['Assistant Response'].dropna())
+    processed_text = text.lower()
+    processed_text = re.sub(r'[^a-zA-Z\s]', '', processed_text)
+    processed_text = ' '.join(processed_text.split())
 
     # Common English stop words to remove
     custom_stop_words = set([
@@ -811,35 +792,31 @@ with tabs[7]:
         'she', 'they', 'am', 'is', 'are', 'was', 'were', 'been', 'being'
     ])
 
-    # Prepare text
-    text = " ".join(filtered_dialogues['Assistant Response'].dropna())
-    processed_text = preprocess_text(text)
-
     # Create and configure word cloud
     wordcloud = WordCloud(
-        width=2400,              # Higher resolution
+        width=2400,
         height=1200,
         background_color='white',
-        colormap='viridis',       # More vibrant colormap
-        max_words=150,           # Show more words
+        colormap='viridis',
+        max_words=150,
         min_font_size=8,
         max_font_size=160,
         random_state=42,
         collocations=False,
         stopwords=custom_stop_words,
-        prefer_horizontal=0.7,   # 70% horizontal words for better readability
+        prefer_horizontal=0.7,
         contour_width=3,
         contour_color='steelblue'
     ).generate(processed_text)
 
-    # Create figure with improved styling
+    # Create figure
     fig, ax = plt.subplots(figsize=(20, 10), facecolor='black')
     ax.imshow(wordcloud, interpolation='bilinear')
     ax.axis('off')
     ax.set_facecolor('black')
     plt.tight_layout(pad=0)
 
-    # Add a subtle title
+    # Add title
     plt.title('Most Common Terms in Assistant Responses', 
             color='white', 
             pad=20, 
@@ -857,14 +834,14 @@ with tabs[7]:
         word_freq = Counter(processed_text.split())
         total_words = len(word_freq)
         unique_words = len(set(processed_text.split()))
-        
+
         st.metric("Total Unique Words", unique_words)
         if word_freq:
             most_common_word, most_common_count = word_freq.most_common(1)[0]
             st.metric("Most Common Word", most_common_word, delta=most_common_count)
         else:
             st.metric("Most Common Word", "N/A")
-        
+
         # Top 5 most common words
         st.write("**Top 5 Most Common Words:**")
         top_5 = word_freq.most_common(5)
@@ -928,9 +905,8 @@ with tabs[7]:
     
     st.plotly_chart(fig_intent, use_container_width=True)
 
-
 with tabs[8]:
-    st.header("💬 Dialogue Explorer")
+    st.header("💬 Dialogue Viewer")
 
     # Enhanced Dark Mode styling with comprehensive UI
     st.markdown("""
@@ -1112,15 +1088,14 @@ with tabs[8]:
 
     # Navigation Controls
     nav_col2, nav_col3 = st.columns([2, 2])
-    
-    
+
     with nav_col2:
         st.markdown(f"""
             <div class='nav-text'>
                 Viewing dialogue {st.session_state.dialogue_number} of {total_dialogues}
             </div>
         """, unsafe_allow_html=True)
-    
+
     with nav_col3:
         dialogue_number = st.number_input(
             "Go to dialogue number",
@@ -1132,7 +1107,7 @@ with tabs[8]:
             key='dialogue_number',
             help="Enter a number between 1 and " + str(total_dialogues)
         )
-    
+
     # Display Current Dialogue
     if total_dialogues > 0:
         current_dialogue_id = unique_dialogue_ids[st.session_state.dialogue_index]
@@ -1145,7 +1120,7 @@ with tabs[8]:
     st.markdown("""
         <div class='header'>📝 Scenario</div>
     """, unsafe_allow_html=True)
-    
+
     st.markdown(f"""
         <div class='scenario-box'>
             <p class='scenario-text'>{dialogue['generated_scenario'].iloc[0]}</p>
@@ -1154,7 +1129,7 @@ with tabs[8]:
 
     # Main Information
     col1, col2 = st.columns(2)
-    
+
     with col1:
         st.markdown(f"""
             <div class='header'>📌 Basic Information</div>
@@ -1175,7 +1150,7 @@ with tabs[8]:
                 </p>
             </div>
         """, unsafe_allow_html=True)
-    
+
     with col2:
         st.markdown(f"""
             <div class='header'>🔍 Context Information</div>
@@ -1193,7 +1168,7 @@ with tabs[8]:
     # Emotions Section
     st.markdown("<div class='header'>🎭 Emotions</div>", unsafe_allow_html=True)
     emo_col1, emo_col2 = st.columns(2)
-    
+
     with emo_col1:
         st.markdown(f"""
             <div class='emotion-box'>
@@ -1201,7 +1176,7 @@ with tabs[8]:
                 {"".join([f"<span class='emotion-tag'>{emotion}</span> " for emotion in dialogue['user_emotions'].iloc[0]])}
             </div>
         """, unsafe_allow_html=True)
-    
+
     with emo_col2:
         st.markdown(f"""
             <div class='emotion-box'>
@@ -1212,7 +1187,7 @@ with tabs[8]:
 
     # Conversation Section
     st.markdown("<div class='header'>💭 Conversation</div>", unsafe_allow_html=True)
-    
+
     for _, turn in dialogue.sort_values('Turn Number').iterrows():
         # User message
         st.markdown(f"""
@@ -1222,7 +1197,7 @@ with tabs[8]:
                 <span class='intent-tag'>🎯 Intent: {turn['Intent']}</span>
             </div>
         """, unsafe_allow_html=True)
-        
+
         # Assistant response
         st.markdown(f"""
             <div class='assistant-message'>

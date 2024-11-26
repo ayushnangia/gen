@@ -16,3 +16,5 @@ models
 auto.py
 JSONs/
 *.svg
+nonf
+*.jsonl
