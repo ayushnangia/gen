@@ -707,7 +707,7 @@ class DialogueGenerator:
 
                 service_count = random.choices(
                     ['single', 'double', 'triple', 'quadruple'],
-                    weights=[0.50, 0.35, 0.10, 0.05]
+                    weights=[0.30, 0.40, 0.20, 0.10]
                 )[0]
 
                 if service_count == 'single':

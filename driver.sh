@@ -6,8 +6,8 @@
 # randomly selecting hyperparameters from the specified ranges for each batch.
 
 # Configuration
-PYTHON_SCRIPT="final_parl_jsonl.py"  # Replace with the correct path if different
-BATCH_SIZE=20
+PYTHON_SCRIPT="parallel_gen.py"  # Replace with the correct path if different
+BATCH_SIZE=200
 # Hyperparameter ranges
 temperature_options=(0.6 0.7 0.8)
 top_p_options=( 0.95 1.0)
