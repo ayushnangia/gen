@@ -22,3 +22,6 @@ datawork
 temp_repo/
 postprocessing/
 post_data/
+data/
+.coverage
+*.csv
