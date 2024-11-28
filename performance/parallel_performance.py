@@ -984,7 +984,7 @@ class DialogueGenerator:
         # Share the initial embeddings across all processes
         initial_embeddings = self.existing_embeddings.copy() if self.existing_embeddings.size > 0 else np.array([])
 
-        num_processes = min(num_generations, multiprocessing.cpu_count())
+        num_processes = 10
         self.logger.info(f"Starting multiprocessing with {num_processes} processes.")
 
         # Create a simplified config dictionary for the workers
