@@ -1444,6 +1444,7 @@ graph TB
 ```
 
 ### Deployment diagram
+```mermaid
 %% Deployment Diagram for Dialogue Generation Pipeline
 graph LR
     %% Nodes
