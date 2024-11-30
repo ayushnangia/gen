@@ -1364,100 +1364,124 @@ flowchart LR
     Embed --> Batch
     Hash --> Batch
 ```
+### Component diagram 
 
-<!-- 
-flowchart LR
-    %% Command-Line Interface
-    subgraph CLI ["Command-Line Interface"]
-        CLI_Arg["Argument Parsing"]
-        TestMode["--test_extraction"]
-        GenMode["Generation Mode"]
+```mermaid
+%% Component Diagram for Dialogue Generation Pipeline
+graph TB
+    %% CLI Component
+    subgraph CLI ["🖥️ Command-Line Interface"]
+        ArgParser["⚙️ Argument Parser"]
+        Modes["🔄 Modes"]
+        ArgParser --> Modes
+        Modes -->|Generation| Workflow["⚙️ Generation Workflow"]
+        Modes -->|Testing| Testing["🧪 Testing and Validation"]
     end
-    
-    %% Initialization and Setup
-    subgraph Init ["Initialization and Setup"]
-        Logging["Logging System"]
-        NLPModels["NLP Models (spaCy)"]
-        EnvAPI["Environment Variables & OpenAI API"]
-        EmbeddingModels["Embedding Models (SentenceTransformer)"]
+
+    %% Initialization Component
+    subgraph Initialization ["🚀 Initialization and Setup"]
+        Logging["📝 Logging System"]
+        NLPModels["🤖 NLP Models (spaCy)"]
+        EnvAPI["🔑 Environment Variables & OpenAI API"]
+        EmbeddingModels["🧮 Embedding Models (SentenceTransformer)"]
     end
-    
-    %% Data Management
-    subgraph Data ["Data Management"]
-        PrimaryDataset["Primary Dataset Loader<br>(multi_woz_v22)"]
-        PersonaDataset["Persona Dataset Loader<br>(FinePersonas)"]
-        RegionsCategories["Regions & Scenario Categories"]
+
+    %% Data Management Component
+    subgraph DataManagement ["💾 Data Management"]
+        PrimaryDataset["📚 Primary Dataset Loader<br>(multi_woz_v22)"]
+        PersonaDataset["👥 Persona Dataset Loader<br>(FinePersonas)"]
+        RegionsCategories["🌍 Regions & Scenario Categories"]
     end
-    
-    %% Core Functionalities
-    subgraph Core ["Core Functionalities"]
-        PersonaMgmt["Persona Management"]
-        ScenarioGen["Scenario Generation"]
-        DialogueExtraction["Dialogue Extraction & Processing"]
-        DialogueGen["Dialogue Generation<br>(OpenAI GPT)"]
-        UniquenessVerif["Uniqueness Verification"]
-        EmotionalAssign["Emotional Assignment"]
+
+    %% Core Functionalities Component
+    subgraph CoreFunctionalities ["⚡ Core Functionalities"]
+        PersonaMgmt["👤 Persona Management"]
+        ScenarioGen["🎬 Scenario Generation"]
+        DialogueExtraction["📑 Dialogue Extraction & Processing"]
+        DialogueGen["💬 Dialogue Generation<br>(OpenAI GPT)"]
+        UniquenessVerif["🔍 Uniqueness Verification"]
     end
-    
-    %% Service and Scenario Management
-    subgraph Service ["Service & Scenario Management"]
-        ServiceCategories["Service Categories & Combinations"]
-        ScenarioDivers["Scenario Diversification"]
+
+    %% Service & Scenario Management Component
+    subgraph ServiceManagement ["🛠️ Service & Scenario Management"]
+        ServiceCategories["📋 Service Categories & Combinations"]
+        ScenarioDivers["🎯 Scenario Diversification"]
     end
-    
-    %% Generation Workflow
-    subgraph Workflow ["Generation Workflow"]
-        SamplingDist["Sampling & Distribution"]
-        DialogueLoop["Dialogue Generation Loop"]
-        ErrorHandling["Error Handling & Retries"]
+
+    %% Generation Workflow Component
+    subgraph GenerationWorkflow ["⚙️ Generation Workflow"]
+        SamplingDist["📊 Sampling & Distribution"]
+        DialogueLoop["🔄 Dialogue Generation Loop"]
+        ErrorHandling["⚠️ Error Handling & Retries"]
     end
-    
-    %% Data Persistence
-    subgraph Persistence ["Data Persistence & Incremental Saving"]
-        SaveDialogues["Saving Dialogues<br>(generated_dialogues.json)"]
-        EmbeddingHashes["Embedding & Hash Management<br>(dialogue_embeddings.npy,<br>dialogue_hashes.json)"]
+
+    %% Data Persistence Component
+    subgraph DataPersistence ["💽 Data Persistence & Incremental Saving"]
+        SaveDialogues["💾 Saving Dialogues<br>(generated_dialogues.json)"]
+        EmbeddingHashes["🔒 Embedding & Hash Management<br>(dialogue_embeddings.npy,<br>dialogue_hashes.json)"]
     end
-    
-    %% Testing and Validation
-    subgraph Testing ["Testing and Validation"]
-        ExtractionTest["Single Dialogue Extraction Test"]
+
+    %% Testing and Validation Component
+    subgraph TestingValidation ["🧪 Testing and Validation"]
+        ExtractionTest["🔬 Single Dialogue Extraction Test"]
     end
-    
-    %% Main Flow Connections
-    CLI_Arg --> TestMode
-    CLI_Arg --> GenMode
-    TestMode --> ExtractionTest
-    GenMode --> Workflow
-    
-    %% Initialization Connections
-    Init --> Core
-    Logging --> Core
-    NLPModels --> DialogueExtraction
-    EnvAPI --> DialogueGen
-    EmbeddingModels --> UniquenessVerif
-    
-    %% Data Flow Connections
-    PrimaryDataset --> DialogueExtraction
-    PersonaDataset --> PersonaMgmt
-    RegionsCategories --> ScenarioGen
-    
-    %% Service Management Connections
-    ServiceCategories --> SamplingDist
-    ScenarioDivers --> ScenarioGen
-    
-    %% Core Process Flow
-    SamplingDist --> DialogueLoop
-    DialogueLoop --> ScenarioGen
-    PersonaMgmt --> ScenarioGen
-    ScenarioGen --> DialogueGen
-    DialogueExtraction --> DialogueGen
-    DialogueGen --> UniquenessVerif
-    UniquenessVerif --> EmotionalAssign
-    EmotionalAssign --> SaveDialogues
-    
-    %% Error Handling
-    DialogueLoop --> ErrorHandling
-    ErrorHandling --> DialogueLoop
-    
-    %% Persistence Flow
-    SaveDialogues --> EmbeddingHashes -->
+
+    %% Connections
+    Initialization --> CoreFunctionalities
+    DataManagement --> CoreFunctionalities
+    ServiceManagement --> CoreFunctionalities
+    CoreFunctionalities --> GenerationWorkflow
+    GenerationWorkflow --> DataPersistence
+
+    %% Testing Mode Connections
+    TestingValidation <-- Testing
+
+    %% CLI Connections
+    CLI --> Initialization
+    CLI --> DataManagement
+    CLI --> ServiceManagement
+    CLI --> CoreFunctionalities
+```
+
+### Deployment diagram
+%% Deployment Diagram for Dialogue Generation Pipeline
+graph LR
+    %% Nodes
+    subgraph LocalMachine ["💻 Local Machine"]
+        CLI["🖥️ Command-Line Interface"]
+        InitSetup["🚀 Initialization and Setup"]
+        DataMgmt["💾 Data Management"]
+        CoreFunc["⚡ Core Functionalities"]
+        ServiceMgmt["🛠️ Service & Scenario Management"]
+        GenWorkflow["⚙️ Generation Workflow"]
+        DataPersist["💽 Data Persistence & Incremental Saving"]
+        TestingVal["🧪 Testing and Validation"]
+    end
+
+    subgraph ExternalServices ["🌐 External Services"]
+        OpenAI["🔗 OpenAI API"]
+        LoggingService["📜 Logging Service"]
+    end
+
+    subgraph StorageSystems ["💾 Storage Systems"]
+        LocalFS["🗂️ Local Filesystem"]
+        CloudStorage["☁️ Cloud Storage (Optional)"]
+    end
+
+    %% Connections
+    CLI --> InitSetup
+    InitSetup --> DataMgmt
+    DataMgmt --> CoreFunc
+    CoreFunc --> ServiceMgmt
+    ServiceMgmt --> GenWorkflow
+    GenWorkflow --> DataPersist
+    CoreFunc --> OpenAI
+    InitSetup --> LoggingService
+    CoreFunc --> LoggingService
+    DataMgmt --> LocalFS
+    DataPersist --> LocalFS
+    DataPersist --> CloudStorage
+    TestingVal --> DataMgmt
+    TestingVal --> CoreFunc
+    TestingVal --> LoggingService
+```
