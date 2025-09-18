@@ -268,3 +268,47 @@ These are the most commonly used transportation methods that are accessible via 
 
 
 CONTEXT CUES AND TIME AND PLACEHOLDER AND BIAS
+
+## Modular usage (no code changes)
+
+You can now run the toolkit via module dispatchers without touching original files:
+
+- Generation (parallel):
+
+```
+python -m synwoz gen-parallel --total_generations 10
+```
+
+- Generation (serial):
+
+```
+python -m synwoz gen-serial --total_generations 10
+```
+
+- Performance generation:
+
+```
+python -m synwoz gen-perf --total_generations 10
+```
+
+- Moderation:
+
+```
+python -m synwoz moderate input.jsonl --workers 5 --retry-failed
+```
+
+- Post-processing:
+
+```
+python -m synwoz post-embed-dedup input.json output.json -t 0.9
+python -m synwoz post-filter input.json output.json -t 5
+python -m synwoz post-hf-upload
+```
+
+- Dashboard:
+
+```
+streamlit run synwoz/dashboard/dashboard.py
+```
+
+All commands forward to the original scripts; functionality remains identical.
