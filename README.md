@@ -2,6 +2,39 @@
 
 ## Overview
 
+### Quickstart (modular, no code changes)
+
+1) Install requirements
+```
+pip install -r requirements.txt
+python synwoz/scripts/setup.py
+```
+
+2) Generate dialogues
+```
+python -m synwoz gen-parallel --total_generations 10
+```
+
+3) Moderate and post-process
+```
+python -m synwoz moderate generated.jsonl --workers 5 --retry-failed
+python -m synwoz post-embed-dedup input.json output.json -t 0.9
+```
+
+4) Explore dashboard
+```
+streamlit run synwoz/dashboard/dashboard.py
+```
+
+### Architecture
+
+- `synwoz/generation/`: serial, parallel, and performance generators (copied verbatim)
+- `synwoz/moderation/`: JSONL moderation pipeline
+- `synwoz/postprocessing/`: deduplication, filtering, HF upload
+- `synwoz/dashboard/`: Streamlit analytics
+- `synwoz/common/`: shared constants (no logic changes)
+- `synwoz/__main__.py`: dispatcher for module commands (`python -m synwoz ...`)
+
 The `capstone.py` script is a powerful tool designed to generate high-quality, unique dialogues using OpenAI's Chat Completion API. Leveraging a dataset from Hugging Face and advanced natural language processing techniques, this script ensures that each generated dialogue is both relevant and distinct. It incorporates sophisticated uniqueness checks and allows for dynamic parameter tuning to balance creativity and coherence in the outputs.
 
 ## Features

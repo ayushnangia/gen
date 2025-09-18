@@ -25,6 +25,14 @@ import httpx  # For asynchronous HTTP requests
 from multiprocessing import Pool
 import tempfile  # For atomic saving of files
 import multiprocessing
+from synwoz.common.config import (
+    TRAVEL_TIME_SLOTS,
+    RESOLUTION_STATUSES,
+    USER_EMOTION_LIST,
+    ASSISTANT_EMOTION_LIST,
+    SCENARIO_CATEGORIES,
+    PREDEFINED_REGIONS,
+)
 
 # Set start method to 'spawn'
 multiprocessing.set_start_method('spawn', force=True)
@@ -98,6 +106,13 @@ class DialogueGenerator:
         self.existing_ids = self.load_existing_dialogues()
         self.existing_hashes = self.load_existing_hashes()
         self.existing_embeddings = self.load_existing_embeddings()
+        # Use shared constants from synwoz.common.config (no behavioral change)
+        self.travel_time_slots = TRAVEL_TIME_SLOTS
+        self.RESOLUTION_STATUSES = RESOLUTION_STATUSES
+        self.USER_EMOTION_LIST = USER_EMOTION_LIST
+        self.ASSISTANT_EMOTION_LIST = ASSISTANT_EMOTION_LIST
+        self.SCENARIO_CATEGORIES = SCENARIO_CATEGORIES
+        self.PREDEFINED_REGIONS = PREDEFINED_REGIONS
 
         self._system_random = random.SystemRandom()
         random.randint = self._system_random.randint
