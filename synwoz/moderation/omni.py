@@ -1,5 +1,6 @@
 from openai import OpenAI
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 import json
 from termcolor import colored
@@ -46,6 +47,14 @@ def load_jsonl_file(file_path):
         print(colored(f"Error loading JSONL file: {e}", "red"))
         return None
 
+
+def _write_jsonl(path: str | Path, records):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open('w', encoding='utf-8') as handle:
+        for record in records:
+            handle.write(json.dumps(record, ensure_ascii=False) + '\n')
+
 @retry(
     retry=retry_if_exception_type(RateLimitException),
     wait=wait_exponential(multiplier=1, min=1, max=60),
@@ -68,7 +77,7 @@ def call_moderation_api(client, full_conversation, dialogue_id):
             logging.error(f"Unexpected error for Dialogue {dialogue_id}: {e}")
             raise e
 
-def moderate_conversation(dialogue, client, flagged_dialogues, failed_dialogues, lock):
+def moderate_conversation(dialogue, client, approved_dialogues, flagged_dialogues, failed_dialogues, lock):
     """
     Process the entire conversation for a single dialogue and collect flagged results.
     """
@@ -117,12 +126,15 @@ def moderate_conversation(dialogue, client, flagged_dialogues, failed_dialogues,
         with lock:
             flagged_dialogues.append({
                 'dialogue_id': dialogue_id,
-                'categories': flagged_categories
+                'categories': flagged_categories,
+                'dialogue': dialogue,
             })
     else:
         success_msg = f"Dialogue {dialogue_id}: All content is appropriate."
         logging.info(success_msg)
         print(colored(success_msg, "green"))
+        with lock:
+            approved_dialogues.append(dialogue)
 
     # Log category scores
     print("Category Scores:")
@@ -134,7 +146,16 @@ def moderate_conversation(dialogue, client, flagged_dialogues, failed_dialogues,
 
     print("---\n")
 
-def process_dialogues(file_path, client, max_workers=5, retry_failed=True):
+def process_dialogues(
+    file_path,
+    client,
+    *,
+    max_workers=5,
+    retry_failed=True,
+    output_path: str | None = None,
+    flagged_output_path: str | None = None,
+    failed_output_path: str | None = None,
+):
     """
     Process all dialogues in the JSONL file using parallel processing with rate limit handling.
     Ensures that no dialogue is left unchecked by retrying failed dialogues.
@@ -147,6 +168,7 @@ def process_dialogues(file_path, client, max_workers=5, retry_failed=True):
     total_dialogues = len(dialogues)
     logging.info(f"Total dialogues to process: {total_dialogues}")
 
+    approved_dialogues = []  # To store dialogues cleared by moderation
     flagged_dialogues = []  # To store dialogues with harmful content
     failed_dialogues = []    # To store dialogues that failed due to errors
     lock = Lock()            # To synchronize access to shared lists
@@ -154,7 +176,15 @@ def process_dialogues(file_path, client, max_workers=5, retry_failed=True):
     # Function to submit dialogues in batches to handle graceful shutdown
     def submit_dialogues(executor, dialogues_subset):
         futures = [
-            executor.submit(moderate_conversation, dialogue, client, flagged_dialogues, failed_dialogues, lock)
+            executor.submit(
+                moderate_conversation,
+                dialogue,
+                client,
+                approved_dialogues,
+                flagged_dialogues,
+                failed_dialogues,
+                lock,
+            )
             for dialogue in dialogues_subset
         ]
         return futures
@@ -205,17 +235,10 @@ def process_dialogues(file_path, client, max_workers=5, retry_failed=True):
         alert_msg = f"\nTotal dialogues that could not be processed successfully: {len(failed_dialogues)}"
         logging.error(alert_msg)
         print(colored(alert_msg, "red", attrs=['bold']))
-        # Optionally, write failed dialogues to a separate JSONL file for manual review or future retries
-        failed_file = "failed_dialogues.jsonl"
-        try:
-            with open(failed_file, 'w', encoding='utf-8') as f:
-                for dialogue in failed_dialogues:
-                    f.write(json.dumps(dialogue) + "\n")
-            logging.info(f"Failed dialogues have been written to {failed_file}.")
-            print(colored(f"Failed dialogues have been written to {failed_file}.", "yellow"))
-        except Exception as e:
-            logging.error(f"Error writing failed dialogues to file: {e}")
-            print(colored(f"Error writing failed dialogues to file: {e}", "red"))
+        if failed_output_path:
+            _write_jsonl(failed_output_path, failed_dialogues)
+            logging.info("Failed dialogues written to %s", failed_output_path)
+            print(colored(f"Failed dialogues written to {failed_output_path}.", "yellow"))
     else:
         success_msg = "All dialogues processed successfully. No harmful content detected."
         logging.info(success_msg)
@@ -228,10 +251,18 @@ def process_dialogues(file_path, client, max_workers=5, retry_failed=True):
         print(colored(alert_msg, "red", attrs=['bold']))
         for flagged in flagged_dialogues:
             print(colored(f"- Dialogue ID: {flagged['dialogue_id']}, Categories: {', '.join(flagged['categories'])}", "red"))
+        if flagged_output_path:
+            _write_jsonl(flagged_output_path, flagged_dialogues)
+            logging.info("Flagged dialogue metadata written to %s", flagged_output_path)
         sys.exit(1)  # Exit with error code after processing all dialogues
     else:
         logging.info("All dialogues processed successfully with no harmful content detected.")
         print(colored("All dialogues processed successfully. No harmful content detected.", "green", attrs=['bold']))
+
+    if output_path and approved_dialogues:
+        _write_jsonl(output_path, approved_dialogues)
+        logging.info("Approved dialogues written to %s", output_path)
+        print(colored(f"Approved dialogues written to {output_path}.", "green"))
 
 def main():
     import argparse
@@ -241,6 +272,9 @@ def main():
     parser.add_argument('input_file', help="Path to the input JSONL file containing the dialogues.")
     parser.add_argument('--workers', type=int, default=5, help="Number of parallel worker threads (default: 5).")
     parser.add_argument('--retry-failed', action='store_true', help="Retry failed dialogues after initial processing.")
+    parser.add_argument('--output', help="Write approved (non-flagged) dialogues to this JSONL file.")
+    parser.add_argument('--flagged-output', help="Write flagged dialogue metadata to this JSONL file.")
+    parser.add_argument('--failed-output', help="Write failed dialogues to this JSONL file.")
     args = parser.parse_args()
 
     # Load environment variables and set up OpenAI client
@@ -266,7 +300,15 @@ def main():
     logging.info("Starting dialogue moderation process.")
 
     # Process the dialogues
-    process_dialogues(args.input_file, client, max_workers=args.workers, retry_failed=args.retry_failed)
+    process_dialogues(
+        args.input_file,
+        client,
+        max_workers=args.workers,
+        retry_failed=args.retry_failed,
+        output_path=args.output,
+        flagged_output_path=args.flagged_output,
+        failed_output_path=args.failed_output,
+    )
 
     logging.info("Dialogue moderation process completed.")
 

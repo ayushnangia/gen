@@ -1,0 +1,4 @@
+# Ignore everything in resources except documentation
+*
+!/.gitignore
+!/README.md

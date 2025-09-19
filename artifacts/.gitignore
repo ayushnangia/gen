@@ -1,0 +1,4 @@
+# Ignore generated artifacts unless explicitly added
+*
+!/.gitignore
+!/README.md

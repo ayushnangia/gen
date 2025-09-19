@@ -47,6 +47,47 @@ def main():
     dash = subparsers.add_parser("dashboard", help="Launch Streamlit dashboard")
     dash.add_argument("args", nargs=argparse.REMAINDER, help="Arguments passed to Streamlit run")
 
+    # Pipeline runner
+    pipeline = subparsers.add_parser("pipeline", help="Run generation, moderation, and dedup stages in sequence")
+    pipeline.add_argument(
+        "--output-dir",
+        type=str,
+        default=None,
+        help="Directory for pipeline artifacts (defaults to artifacts/run-<timestamp>)",
+    )
+    pipeline.add_argument(
+        "--gen-cmd",
+        type=str,
+        default="",
+        help="Extra CLI args forwarded to gen-parallel (e.g. \"--total_generations 10\")",
+    )
+    pipeline.add_argument(
+        "--moderation-cmd",
+        type=str,
+        default="",
+        help="Extra CLI args forwarded to moderation",
+    )
+    pipeline.add_argument(
+        "--dedupe-cmd",
+        type=str,
+        default="",
+        help="Extra CLI args forwarded to post-embed-dedup",
+    )
+    pipeline.add_argument(
+        "--skip-moderation",
+        action="store_true",
+        help="Skip the moderation stage",
+    )
+    pipeline.add_argument(
+        "--skip-dedupe",
+        action="store_true",
+        help="Skip the deduplication stage",
+    )
+
+    # Resources
+    resources = subparsers.add_parser("resources", help="Manage local models and datasets")
+    resources.add_argument("args", nargs=argparse.REMAINDER, help="Arguments forwarded to resources sync")
+
     parsed = parser.parse_args()
 
     if parsed.command == "gen-serial":
@@ -73,11 +114,25 @@ def main():
     elif parsed.command == "dashboard":
         script_path = __import__("pathlib").Path(__file__).parent / "dashboard" / "dashboard.py"
         subprocess.run([sys.executable, "-m", "streamlit", "run", str(script_path)] + (parsed.args or []), check=True)
+    elif parsed.command == "pipeline":
+        from synwoz.pipeline import build_pipeline_config, run_pipeline
+
+        config = build_pipeline_config(
+            parsed.output_dir,
+            parsed.gen_cmd,
+            parsed.moderation_cmd,
+            parsed.dedupe_cmd,
+            parsed.skip_moderation,
+            parsed.skip_dedupe,
+        )
+        run_pipeline(config)
+    elif parsed.command == "resources":
+        from synwoz.resources import main as _resources_main
+
+        _forward_to_main(_resources_main, parsed.args)
     else:
         parser.print_help()
 
 
 if __name__ == "__main__":
     main()
-
-

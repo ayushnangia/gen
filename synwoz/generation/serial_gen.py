@@ -19,7 +19,6 @@ import re
 import uuid
 import argparse
 from collections import defaultdict
-import ast
 from synwoz.common.config import (
     TRAVEL_TIME_SLOTS,
     RESOLUTION_STATUSES,
@@ -27,6 +26,17 @@ from synwoz.common.config import (
     ASSISTANT_EMOTION_LIST,
     SCENARIO_CATEGORIES,
     PREDEFINED_REGIONS,
+)
+from synwoz.common.logging_utils import configure_logging
+from synwoz.generation.configuration import GenerationConfig
+from synwoz.generation.persona import PersonaManager
+from synwoz.generation.storage import (
+    load_dialogues_json,
+    load_embeddings,
+    load_hashes_json,
+    save_dialogues_json,
+    save_embeddings_atomic,
+    save_hashes_json,
 )
 
 
@@ -44,23 +54,12 @@ class DialogueGenerator:
         self.frequency_penalty_range = config.get('frequency_penalty_range', (0.0, 0.7))
         self.presence_penalty_range = config.get('presence_penalty_range', (0.0, 0.7))
         self.total_generations = config.get('total_generations', 10)
-        self.persona_dataset = self.load_persona_dataset()
-        self.cluster_dict = defaultdict(list)
-        self.summary_dict = defaultdict(list)
-        self.populate_persona_dicts()
-
-
-
-        # Initialize logging
-        logging.basicConfig(
-            level=logging.INFO,  # Change to DEBUG for more detailed logs
-            format='%(asctime)s [%(levelname)s] %(message)s',
-            handlers=[
-                logging.FileHandler("dialogue_generation.log"),
-                logging.StreamHandler()
-            ]
-        )
+        configure_logging("dialogue_generation.log", level=logging.INFO)
         self.logger = logging.getLogger(__name__)
+        persona_dataset_path = config.get(
+            'persona_dataset_path', './local_datasets/FinePersonas-v0.1-clustering-100k'
+        )
+        self.persona_manager = PersonaManager(persona_dataset_path, logger=self.logger)
 
         try:
             self.logger.info("Loading spaCy model...")
@@ -106,9 +105,14 @@ class DialogueGenerator:
         self.dataset = self.load_dataset()
 
         # Load existing dialogues and hashes
-        self.existing_ids = self.load_existing_dialogues()
-        self.existing_hashes = self.load_existing_hashes()
-        self.existing_embeddings = self.load_existing_embeddings()
+        self.dialogue_cache = load_dialogues_json(self.output_file, self.logger)
+        self.existing_ids = {
+            dialogue.get('dialogue_id')
+            for dialogue in self.dialogue_cache
+            if dialogue.get('dialogue_id')
+        }
+        self.existing_hashes = load_hashes_json(self.hash_file, self.logger)
+        self.existing_embeddings = load_embeddings(self.embedding_file, self.logger)
     def get_categories_for_service(self, service: str) -> List[str]:
         """
         Returns a list of categories applicable to the given service.
@@ -124,41 +128,6 @@ class DialogueGenerator:
             self.logger.warning(f"Unknown service '{service}', using only general categories")
             
         return categories
-    def load_persona_dataset(self):
-        dataset_path = './local_datasets/FinePersonas-v0.1-clustering-100k'
-        dataset = load_from_disk(dataset_path)
-        return dataset[list(dataset.keys())[0]]  
-    def safe_eval(self, s):
-        try:
-            return ast.literal_eval(s)
-        except (ValueError, SyntaxError):
-            return []
-
-    def get_summary_labels(self, label):
-        labels = self.safe_eval(label)
-        if isinstance(labels, list):
-            return tuple(sorted(labels))
-        elif isinstance(labels, str):
-            return (label,)
-        return tuple()
-
-    def populate_persona_dicts(self):
-        for i, (cluster, summary) in enumerate(zip(self.persona_dataset['cluster_label'], self.persona_dataset['summary_label'])):
-            self.cluster_dict[cluster].append(i)
-            summary_labels = self.get_summary_labels(summary)
-            self.summary_dict[summary_labels].append(i)
-
-    def select_random_persona(self):
-        if random.choice([True, False]):
-            # Cluster-based selection
-            cluster = random.choice(list(self.cluster_dict.keys()))
-            index = random.choice(self.cluster_dict[cluster])
-        else:
-            # Summary-based selection
-            summary = random.choice(list(self.summary_dict.keys()))
-            index = random.choice(self.summary_dict[summary])
-
-        return self.persona_dataset[index]['persona']
     def generate_random_time(self, time_slot: Tuple[int, int, str]) -> str:
         """
         Generates a random time within a given time slot in 5-minute intervals.
@@ -282,50 +251,6 @@ class DialogueGenerator:
         return base_conversation
 
 
-    def load_existing_dialogues(self) -> Tuple[List[Dict], set]:
-        """
-        Loads existing dialogues and their IDs from the output file.
-        """
-        if os.path.exists(self.output_file):
-            try:
-                with open(self.output_file, 'r', encoding='utf-8') as f:
-                    existing_dialogues = json.load(f)
-                    existing_ids = {dialogue['dialogue_id'] for dialogue in existing_dialogues}
-                self.logger.info(f"Loaded {len(existing_dialogues)} existing dialogues from '{self.output_file}'.")
-                return existing_ids
-            except Exception as e:
-                self.logger.warning(f"Could not load existing dialogues: {e}")
-        return set()
-
-    def load_existing_hashes(self) -> set:
-        """
-        Loads existing dialogue hashes from a hash file or the output JSON file.
-        """
-        if os.path.exists(self.hash_file):
-            try:
-                with open(self.hash_file, 'r', encoding='utf-8') as f:
-                    hashes = set(json.load(f))
-                # self.logger.info(f"Loaded {len(hashes)} existing dialogue hashes from '{self.hash_file}'.")
-                return hashes
-            except Exception as e:
-                self.logger.warning(f"Could not load existing hashes: {e}")
-        elif os.path.exists(self.output_file):
-            # Fallback to existing output file
-            self.logger.warning(f"Could not load existing dialogues: {e}")
-        return set()
-
-    def load_existing_embeddings(self) -> np.ndarray:
-        """
-        Loads existing dialogue embeddings from a file.
-        """
-        if os.path.exists(self.embedding_file):
-            try:
-                embeddings = np.load(self.embedding_file)
-                self.logger.info(f"Loaded {embeddings.shape[0]} existing dialogue embeddings from '{self.embedding_file}'.")
-                return embeddings
-            except Exception as e:
-                self.logger.warning(f"Could not load existing embeddings: {e}")
-        return np.array([])
 
     def save_embeddings(self, embeddings: np.ndarray):
         """
@@ -369,7 +294,7 @@ class DialogueGenerator:
                 self.logger.info(f"Selected new category '{category}' for service '{listservice}'")
 
 
-            user_persona = self.select_random_persona()
+            user_persona = self.persona_manager.select_random_persona()
             selected_slot = random.choice(self.travel_time_slots)
             specific_time = self.generate_random_time(selected_slot)
 
@@ -869,38 +794,23 @@ class DialogueGenerator:
         """
         Saves new dialogues to the output file and updates embeddings and hashes.
         """
-        # Load existing dialogues if the output file exists
-        if os.path.exists(self.output_file):
-            try:
-                with open(self.output_file, 'r', encoding='utf-8') as f:
-                    all_dialogues = json.load(f)
-            except Exception as e:
-                self.logger.warning(f"Could not load existing dialogues from '{self.output_file}': {e}")
-                all_dialogues = []
-        else:
-            all_dialogues = []
+        if not new_dialogues:
+            return
 
-        # Combine existing and new dialogues
-        all_dialogues.extend(new_dialogues)
+        self.dialogue_cache.extend(new_dialogues)
+        save_dialogues_json(self.output_file, self.dialogue_cache, self.logger)
 
-        # Save the combined dialogues to the output file
-        try:
-            with open(self.output_file, 'w', encoding='utf-8') as f:
-                json.dump(all_dialogues, f, indent=4, ensure_ascii=False)
-            self.logger.info(f"Saved {len(new_dialogues)} new dialogues to '{self.output_file}'. Total dialogues: {len(all_dialogues)}.")
-        except Exception as e:
-            self.logger.error(f"Failed to save dialogues to '{self.output_file}': {e}")
+        for dialogue in new_dialogues:
+            dialogue_id = dialogue.get('dialogue_id')
+            if dialogue_id:
+                self.existing_ids.add(dialogue_id)
 
-        # Save the updated embeddings
-        self.save_embeddings(self.existing_embeddings)
+        save_embeddings_atomic(self.embedding_file, self.existing_embeddings, self.logger)
 
-        # Update the dialogue hashes
-        try:
-            with open(self.hash_file, 'w', encoding='utf-8') as hf:
-                json.dump(list(self.existing_hashes), hf, indent=4)
-            self.logger.info(f"Updated '{self.hash_file}' with {len(self.existing_hashes)} hashes.")
-        except Exception as e:
-            self.logger.error(f"Failed to update '{self.hash_file}': {e}")
+        for dialogue in new_dialogues:
+            dialogue_hash = hashlib.sha256(json.dumps(dialogue, sort_keys=True).encode('utf-8')).hexdigest()
+            self.existing_hashes.add(dialogue_hash)
+        save_hashes_json(self.hash_file, self.existing_hashes, self.logger)
 
     def test_single_dialogue_extraction(self, index: int = 0):
         """
@@ -946,6 +856,13 @@ def parse_arguments():
     parser.add_argument('--top_p', type=float, nargs='+', default=[0.8, 0.85, 0.9, 0.95, 1.0], help='Top-p options for OpenAI API.')
     parser.add_argument('--frequency_penalty', type=float, nargs='+', default=[0.0, 0.2, 0.4, 0.6, 0.7], help='Frequency penalty options for OpenAI API.')
     parser.add_argument('--presence_penalty', type=float, nargs='+', default=[0.0, 0.2, 0.4, 0.6, 0.7], help='Presence penalty options for OpenAI API.')
+    parser.add_argument(
+        '--persona-dataset-path',
+        dest='persona_dataset_path',
+        type=str,
+        default='./local_datasets/FinePersonas-v0.1-clustering-100k',
+        help='Path to the FinePersonas dataset downloaded via setup.py.',
+    )
     
     # Additional options
     parser.add_argument('--test_extraction', action='store_true', help='Test extraction of a single dialogue.')
@@ -956,22 +873,8 @@ def parse_arguments():
 def main():
     args = parse_arguments()
 
-    config = {
-        'output_file': args.output_file,
-        'hash_file': args.hash_file,
-        'embedding_file': args.embedding_file,
-        'similarity_threshold': args.similarity_threshold,
-        'dataset_name': args.dataset_name,
-        'min_turns_range': tuple(args.min_turns),
-        'max_turns_range': tuple(args.max_turns),
-        'temperature_range': (min(args.temperature), max(args.temperature)),
-        'top_p_range': (min(args.top_p), max(args.top_p)),
-        'frequency_penalty_range': (min(args.frequency_penalty), max(args.frequency_penalty)),
-        'presence_penalty_range': (min(args.presence_penalty), max(args.presence_penalty)),
-        'total_generations': args.total_generations
-    }
-
-    generator = DialogueGenerator(config)
+    config = GenerationConfig.from_args(args)
+    generator = DialogueGenerator(config.to_dict())
 
     if args.test_extraction:
         generator.test_single_dialogue_extraction(index=args.extraction_index)
