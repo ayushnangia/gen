@@ -15,6 +15,8 @@ DEFAULT_DATASET_NAME = "pfb30/multi_woz_v22"
 DEFAULT_DATASET_PATH = Path("./local_datasets/multi_woz_v22")
 DEFAULT_PERSONA_NAME = "argilla/FinePersonas-v0.1-clustering-100k"
 DEFAULT_PERSONA_PATH = Path("./local_datasets/FinePersonas-v0.1-clustering-100k")
+DEFAULT_SYNWOZ_NAME = "Ayushnangia/SynWOZ"
+DEFAULT_SYNWOZ_PATH = Path("./local_datasets/SynWOZ")
 
 
 def download_sentence_transformer(
@@ -64,6 +66,8 @@ def setup_environment(
     dataset_path: Path | str = DEFAULT_DATASET_PATH,
     persona_dataset_name: Optional[str] = DEFAULT_PERSONA_NAME,
     persona_dataset_path: Optional[Path | str] = DEFAULT_PERSONA_PATH,
+    synwoz_dataset_name: Optional[str] = DEFAULT_SYNWOZ_NAME,
+    synwoz_dataset_path: Optional[Path | str] = DEFAULT_SYNWOZ_PATH,
     force: bool = False,
 ) -> None:
     """Download core resources needed for generation."""
@@ -80,6 +84,9 @@ def setup_environment(
     if persona_dataset_name and persona_dataset_path:
         download_and_save_dataset(persona_dataset_name, persona_dataset_path, force=force)
 
+    if synwoz_dataset_name and synwoz_dataset_path:
+        download_and_save_dataset(synwoz_dataset_name, synwoz_dataset_path, force=force)
+
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Download SynWOZ resources")
@@ -89,7 +96,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dataset-path", default=str(DEFAULT_DATASET_PATH))
     parser.add_argument("--persona-dataset-name", default=DEFAULT_PERSONA_NAME)
     parser.add_argument("--persona-dataset-path", default=str(DEFAULT_PERSONA_PATH))
+    parser.add_argument("--synwoz-dataset-name", default=DEFAULT_SYNWOZ_NAME)
+    parser.add_argument("--synwoz-dataset-path", default=str(DEFAULT_SYNWOZ_PATH))
     parser.add_argument("--skip-persona", action="store_true")
+    parser.add_argument("--skip-synwoz", action="store_true", help="Skip downloading the SynWOZ dataset")
     parser.add_argument("--force", action="store_true", help="Redownload datasets even if they exist")
     return parser
 
@@ -100,6 +110,9 @@ def parse_arguments(argv=None):
     if args.skip_persona:
         args.persona_dataset_name = None
         args.persona_dataset_path = None
+    if args.skip_synwoz:
+        args.synwoz_dataset_name = None
+        args.synwoz_dataset_path = None
     return args
 
 
@@ -110,6 +123,8 @@ __all__ = [
     "DEFAULT_DATASET_PATH",
     "DEFAULT_PERSONA_NAME",
     "DEFAULT_PERSONA_PATH",
+    "DEFAULT_SYNWOZ_NAME",
+    "DEFAULT_SYNWOZ_PATH",
     "download_sentence_transformer",
     "download_and_save_dataset",
     "setup_environment",

@@ -4,6 +4,29 @@ A toolkit for generating, moderating, deduplicating, and exploring synthetic tas
 
 **ACL 2025 Student Research Workshop (SRW) Submission**
 
+## Dataset
+
+The generated SynWOZ dataset is available on HuggingFace:
+
+🤗 **[Ayushnangia/SynWOZ](https://huggingface.co/datasets/Ayushnangia/SynWOZ)**
+
+50k+ synthetic task-oriented dialogues covering restaurants, hotels, taxis, flights, and more.
+
+### Load the Dataset
+
+```python
+from datasets import load_dataset
+
+dataset = load_dataset("Ayushnangia/SynWOZ")
+```
+
+### Dataset Features
+
+- **Multi-service dialogues**: Restaurant, hotel, taxi, train, flight, attraction, hospital, bus
+- **Rich annotations**: Intent, emotions (user & assistant), scenario category, resolution status
+- **Diverse personas**: Generated using FinePersonas for realistic user profiles
+- **Quality assured**: Moderated via OpenAI API + FAISS semantic deduplication
+
 ## Quick Start
 
 ```bash
@@ -17,11 +40,27 @@ uv pip install -r requirements.txt
 cp .env.example .env.local
 # Edit .env.local and add: OPENAI_KEY=sk-...
 
-# 4. Download models and datasets
+# 4. Download models and datasets (includes SynWOZ from HuggingFace)
 uv run python -m synwoz resources --
 
 # 5. (Optional) Install spaCy model if needed
 uv run python -m spacy download en_core_web_sm
+```
+
+### Resource Download Options
+
+```bash
+# Download everything (models + all datasets)
+uv run python -m synwoz resources --
+
+# Skip SynWOZ dataset (only source datasets for generation)
+uv run python -m synwoz resources -- --skip-synwoz
+
+# Skip persona dataset
+uv run python -m synwoz resources -- --skip-persona
+
+# Force re-download
+uv run python -m synwoz resources -- --force
 ```
 
 ## Pipeline
