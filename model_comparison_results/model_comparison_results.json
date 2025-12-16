@@ -1,0 +1,6 @@
+{
+  "dataset": "SynWOZ",
+  "sample_size": 1000,
+  "gpt2_perplexity": 18.551552040226277,
+  "gpt2_avg_loss": 2.920553453490204,
+  "coherence": 

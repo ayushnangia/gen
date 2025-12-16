@@ -1,0 +1,45 @@
+{
+  "deduplication": {
+    "full_pipeline": {
+      "removed": 106,
+      "remaining": 50364,
+      "num_dialogues": 50364,
+      "unique_services": 8,
+      "service_entropy": 2.918346711811758,
+      "unique_intents": 102377,
+      "embedding_diversity": 0.6676852703094482
+    },
+    "exact_only": {
+      "removed": 0,
+      "remaining": 50470,
+      "num_dialogues": 50470,
+      "unique_services": 8,
+      "service_entropy": 2.9182841396382497,
+      "unique_intents": 102532,
+      "embedding_diversity": 0.6725590825080872
+    },
+    "no_deduplication": {
+      "removed": 0,
+      "remaining": 50470,
+      "num_dialogues": 50470,
+      "unique_services": 8,
+      "service_entropy": 2.9182841396382497,
+      "unique_intents": 102532,
+      "embedding_diversity": 0.6635144948959351
+    }
+  },
+  "sampling": {
+    "stratified": {
+      "region_coverage": 1.0,
+      "user_emotion_coverage": 1.0,
+      "assistant_emotion_coverage": 1.0,
+      "region_entropy": 5.754254575554608,
+      "region_entropy_ratio": 0.9998900192907989,
+      "emotion_entropy": 4.321659609430493,
+      "emotion_entropy_ratio": 0.9999378783147301
+    },
+    "random_baseline": {
+      "estimated_coverage": 0.9999999741310222
+    }
+  }
+}

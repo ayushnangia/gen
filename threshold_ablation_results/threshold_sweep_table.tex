@@ -1,0 +1,18 @@
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Threshold} & \textbf{Kept} & \textbf{Removed (\%)} & \textbf{Variance} & \textbf{Distinct-2} \\
+\midrule
+No deduplication & 10,000 & 0.0\% & 0.0016 & 0.1415 \\
+Threshold 0.8 & 7,270 & 27.3\% & 0.0017 & 0.1675 \\
+Threshold 0.85 & 9,301 & 7.0\% & 0.0016 & 0.1474 \\
+Threshold 0.9 & 9,964 & 0.4\% & 0.0016 & 0.1417 \\
+Threshold 0.95 & 9,999 & 0.0\% & 0.0016 & 0.1414 \\
+Threshold 0.99 & 10,000 & 0.0\% & 0.0016 & 0.1415 \\
+\bottomrule
+\end{tabular}
+\caption{Effect of deduplication threshold on dataset size and diversity metrics. Lower thresholds remove more duplicates but may reduce legitimate variation.}
+\label{tab:threshold_sweep}
+\end{table}

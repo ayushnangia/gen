@@ -1,0 +1,62 @@
+[
+  {
+    "threshold": 1.0,
+    "label": "No deduplication",
+    "kept": 10000,
+    "removed": 0,
+    "removal_rate": 0,
+    "variance": 0.0016180319944396615,
+    "mean_distance": 0.6185218471163759,
+    "distinct_2": 0.14148201612146705
+  },
+  {
+    "threshold": 0.8,
+    "label": "Threshold 0.8",
+    "kept": 7270,
+    "removed": 2730,
+    "removal_rate": 27.3,
+    "variance": 0.0016840751050040126,
+    "mean_distance": 0.6488039067837058,
+    "distinct_2": 0.1674813140261909
+  },
+  {
+    "threshold": 0.85,
+    "label": "Threshold 0.85",
+    "kept": 9301,
+    "removed": 699,
+    "removal_rate": 6.99,
+    "variance": 0.0016355108236894011,
+    "mean_distance": 0.6295703941541976,
+    "distinct_2": 0.1473713222013977
+  },
+  {
+    "threshold": 0.9,
+    "label": "Threshold 0.9",
+    "kept": 9964,
+    "removed": 36,
+    "removal_rate": 0.36,
+    "variance": 0.0016186712309718132,
+    "mean_distance": 0.6163138570397779,
+    "distinct_2": 0.14173105571910216
+  },
+  {
+    "threshold": 0.95,
+    "label": "Threshold 0.95",
+    "kept": 9999,
+    "removed": 1,
+    "removal_rate": 0.01,
+    "variance": 0.0016179013764485717,
+    "mean_distance": 0.622660156282315,
+    "distinct_2": 0.1414339516771993
+  },
+  {
+    "threshold": 0.99,
+    "label": "Threshold 0.99",
+    "kept": 10000,
+    "removed": 0,
+    "removal_rate": 0.0,
+    "variance": 0.0016180319944396615,
+    "mean_distance": 0.6207034199680405,
+    "distinct_2": 0.14148201612146705
+  }
+]

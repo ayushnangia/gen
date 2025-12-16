@@ -1,27 +1,75 @@
+# Environment and secrets
 .env.local
+.env
+*.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.so
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+
+# Virtual environments
 venv/
-en_core_web_sm-3.7.1-py3-none-any.whl
+.venv/
+env/
+
+# Local datasets and models (large files)
+local_datasets/
+models/
+resources/
+SynWOZ-dataset/
+
+# Generated artifacts
+artifacts/
 generated_dialogues.json
 dialogue_hashes.json
 dialogue_embeddings.npy
-dialogue_generation.log
+
+# Logs
 *.log
+dialogue_generation.log
+
+# Data files (generated outputs)
 *.npy
-*.whl
-*.json
-__pycache__
-local_datasets
-models
-*.zip
-auto.py
-JSONs/
-*.svg
-nonf
 *.jsonl
-datawork
+*.csv
+
+# Archives
+*.zip
+*.tar.gz
+*.whl
+
+# Temporary and scratch
 temp_repo/
-postprocessing/
+datawork/
+JSONs/
 post_data/
 data/
-.coverage
-*.csv
+nonf/
+auto.py
+
+# IDE and OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# LaTeX auxiliary files
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.synctex.gz
+*.out
+
+# Notebooks checkpoints
+.ipynb_checkpoints/
