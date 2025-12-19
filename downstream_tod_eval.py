@@ -84,27 +84,69 @@ def prepare_dataset(dialogues: List[Dict], tokenizer, max_length: int) -> Datase
 
 
 def compute_perplexity(model, tokenizer, texts: List[str], device: str) -> float:
-    """Compute perplexity on a list of texts."""
+    """
+    Compute perplexity on a list of dialogue texts.
+
+    Perplexity Calculation for Dialogue Evaluation:
+    ------------------------------------------------
+    Perplexity (PPL) quantifies how "surprised" the language model is by the text.
+    It's the exponential of the average cross-entropy loss per token.
+
+    Formula:
+        PPL = exp(H) where H = -1/N * Σ log₂ P(wᵢ | w₁, w₂, ..., wᵢ₋₁)
+
+    How it works for dialogues:
+    1. Each dialogue is tokenized into a sequence of tokens
+    2. The model predicts the probability of each token given previous tokens
+    3. Cross-entropy loss measures prediction accuracy: -log P(actual_token)
+    4. Average loss across all tokens gives the entropy H
+    5. Perplexity = exp(H) converts to an interpretable scale
+
+    Why perplexity matters for SynWOZ evaluation:
+    - Baseline PPL (pre-trained model): Shows how "natural" dialogues appear to
+      a general language model. Lower = more natural language patterns.
+    - Fine-tuned PPL: Shows how well the model learns dialogue-specific patterns.
+      Large improvement from baseline indicates learnable, consistent structure.
+    - Comparison with MultiWOZ: If SynWOZ achieves lower perplexity, it suggests
+      more coherent and predictable dialogue patterns.
+
+    Args:
+        model: Causal language model (e.g., DistilGPT-2)
+        tokenizer: Tokenizer matching the model
+        texts: List of formatted dialogue strings
+        device: Computation device ('cpu', 'cuda', 'mps')
+
+    Returns:
+        float: Perplexity score (lower is better, typically 50-500 for dialogues)
+    """
     model.eval()
     total_loss = 0
     total_tokens = 0
 
     with torch.no_grad():
         for text in tqdm(texts, desc="Computing perplexity"):
+            # Tokenize dialogue (truncate if exceeds MAX_LENGTH)
             encodings = tokenizer(text, return_tensors='pt', truncation=True, max_length=MAX_LENGTH)
             input_ids = encodings.input_ids.to(device)
 
+            # Need at least 2 tokens to make a prediction
             if input_ids.shape[1] < 2:
                 continue
 
+            # Compute cross-entropy loss: model predicts next token at each position
+            # labels=input_ids means we're doing next-token prediction (causal LM)
             outputs = model(input_ids, labels=input_ids)
-            loss = outputs.loss
-            num_tokens = input_ids.shape[1] - 1
+            loss = outputs.loss  # Average cross-entropy over the sequence
 
+            # Weight by actual number of predictions (N-1 for N tokens)
+            num_tokens = input_ids.shape[1] - 1
             total_loss += loss.item() * num_tokens
             total_tokens += num_tokens
 
+    # Average cross-entropy across entire evaluation set
     avg_loss = total_loss / total_tokens if total_tokens > 0 else float('inf')
+
+    # Convert to perplexity: PPL = e^(cross_entropy)
     return np.exp(avg_loss)
 
 

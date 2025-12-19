@@ -88,6 +88,14 @@ def main():
     resources = subparsers.add_parser("resources", help="Manage local models and datasets")
     resources.add_argument("args", nargs=argparse.REMAINDER, help="Arguments forwarded to resources sync")
 
+    # Evaluation
+    evaluate = subparsers.add_parser("evaluate", help="Compute evaluation metrics (perplexity, precision/recall, coherence)")
+    evaluate.add_argument("args", nargs=argparse.REMAINDER, help="Arguments passed to evaluation metrics")
+
+    # Ablation experiments
+    ablation = subparsers.add_parser("ablation", help="Run ablation study experiments")
+    ablation.add_argument("args", nargs=argparse.REMAINDER, help="Arguments passed to ablation runner")
+
     parsed = parser.parse_args()
 
     if parsed.command == "gen-serial":
@@ -130,6 +138,25 @@ def main():
         from synwoz.resources import main as _resources_main
 
         _forward_to_main(_resources_main, parsed.args)
+    elif parsed.command == "evaluate":
+        # Run the evaluation metrics module as a script
+        from synwoz.evaluation import metrics
+        saved_argv = list(sys.argv)
+        try:
+            sys.argv = [saved_argv[0]] + parsed.args
+            # Execute the metrics module's main block
+            exec(compile(open(metrics.__file__).read(), metrics.__file__, 'exec'), {'__name__': '__main__'})
+        finally:
+            sys.argv = saved_argv
+    elif parsed.command == "ablation":
+        # Run ablation experiments
+        from synwoz.experiments import ablation_runner
+        saved_argv = list(sys.argv)
+        try:
+            sys.argv = [saved_argv[0]] + parsed.args
+            exec(compile(open(ablation_runner.__file__).read(), ablation_runner.__file__, 'exec'), {'__name__': '__main__'})
+        finally:
+            sys.argv = saved_argv
     else:
         parser.print_help()
 
