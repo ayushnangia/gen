@@ -49,27 +49,110 @@ def load_synwoz(path: str, sample_size: int = None) -> List[str]:
 
 
 def compute_perplexity(texts: List[str], model, tokenizer, device: str = 'cpu', max_length: int = 512) -> Dict:
-    """Compute perplexity for a list of texts using a language model."""
+    """
+    Compute perplexity for a list of texts using a pre-trained language model.
+
+    ==========================================================================
+    PERPLEXITY: MATHEMATICAL DEFINITION AND CALCULATION
+    ==========================================================================
+
+    Perplexity measures how well a probability distribution (language model)
+    predicts a sample. It is the exponential of the cross-entropy:
+
+    FORMULA:
+    --------
+    For a token sequence W = (w_1, w_2, ..., w_N):
+
+        PPL(W) = exp( H(W) )
+
+    where H(W) is the cross-entropy:
+
+        H(W) = -1/N * Σ_{i=1}^{N} log P(w_i | w_1, ..., w_{i-1})
+
+    STEP-BY-STEP CALCULATION:
+    -------------------------
+    1. TOKENIZATION: Convert text to token IDs
+       "Hello world" → [15496, 995]
+
+    2. FORWARD PASS: Model predicts probability distribution at each position
+       P(w_1), P(w_2|w_1), P(w_3|w_1,w_2), ...
+
+    3. CROSS-ENTROPY LOSS: For each token, compute -log P(actual_token)
+       This measures "surprise" - lower probability = higher loss
+
+    4. AVERAGE: Sum losses and divide by number of tokens (N-1, since first
+       token has no context)
+
+    5. EXPONENTIATE: PPL = exp(average_loss)
+
+    INTERPRETATION:
+    ---------------
+    - Perplexity of K means the model is "as uncertain" as if uniformly
+      choosing among K equally likely tokens at each step
+    - LOWER IS BETTER: The model finds the text more predictable
+    - Typical values:
+        * Excellent (in-domain): 10-30
+        * Good: 30-80
+        * Moderate: 80-150
+        * Poor (out-of-domain): 150+
+
+    WHY WE USE GPT-2:
+    -----------------
+    - Pre-trained on diverse web text (WebText dataset)
+    - Provides a baseline measure of "naturalness"
+    - Autoregressive model: naturally suited for perplexity calculation
+    - Available in multiple sizes: gpt2 (124M), gpt2-medium (355M), etc.
+
+    Args:
+        texts: List of dialogue text strings to evaluate
+        model: Pre-trained GPT-2 (or similar causal LM) model
+        tokenizer: Corresponding tokenizer
+        device: Computation device ('cpu', 'cuda', 'mps')
+        max_length: Maximum sequence length (longer texts are truncated)
+
+    Returns:
+        Dictionary containing:
+        - 'perplexity': The computed perplexity score
+        - 'avg_loss': Average cross-entropy loss per token
+        - 'total_tokens': Total tokens evaluated (for transparency)
+
+    See Also:
+        synwoz.evaluation.metrics - Comprehensive evaluation module with
+        additional metrics (precision, recall, coherence)
+    """
     model.eval()
     total_loss = 0
     total_tokens = 0
 
     with torch.no_grad():
         for text in tqdm(texts, desc="Computing perplexity"):
+            # Step 1: Tokenize the text into token IDs
             encodings = tokenizer(text, return_tensors='pt', truncation=True, max_length=max_length)
             input_ids = encodings.input_ids.to(device)
 
+            # Need at least 2 tokens for next-token prediction
             if input_ids.shape[1] < 2:
                 continue
 
+            # Step 2 & 3: Forward pass computes cross-entropy loss
+            # labels=input_ids: model predicts each token from previous context
+            # HuggingFace handles the shifting internally
             outputs = model(input_ids, labels=input_ids)
-            loss = outputs.loss
-            num_tokens = input_ids.shape[1] - 1  # Exclude first token
+            loss = outputs.loss  # Average cross-entropy for this sequence
 
+            # Number of predictions = sequence_length - 1
+            # (First token has no preceding context)
+            num_tokens = input_ids.shape[1] - 1
+
+            # Accumulate for proper weighted averaging across all texts
             total_loss += loss.item() * num_tokens
             total_tokens += num_tokens
 
+    # Step 4: Compute average cross-entropy across entire corpus
     avg_loss = total_loss / total_tokens if total_tokens > 0 else float('inf')
+
+    # Step 5: Convert to perplexity
+    # PPL = exp(average cross-entropy loss)
     perplexity = math.exp(avg_loss)
 
     return {
@@ -80,18 +163,70 @@ def compute_perplexity(texts: List[str], model, tokenizer, device: str = 'cpu', 
 
 
 def compute_coherence(texts: List[str]) -> float:
-    """Compute dialogue coherence using sentence embeddings."""
+    """
+    Compute dialogue coherence using sentence embeddings.
+
+    COHERENCE DEFINITION:
+    ---------------------
+    Coherence measures how semantically related consecutive turns in a
+    dialogue are. High coherence indicates smooth topic flow and relevant
+    responses; low coherence may indicate topic jumps or incoherent replies.
+
+    FORMULA:
+    --------
+    For a dialogue with turns T = (t_1, t_2, ..., t_n):
+
+        Coherence = 1/(n-1) * Σ_{i=1}^{n-1} cosine_sim(embed(t_i), embed(t_{i+1}))
+
+    Where:
+    - embed(t) produces a sentence embedding using SentenceTransformer
+    - cosine_sim(a, b) = (a · b) / (||a|| * ||b||)
+
+    STEP-BY-STEP CALCULATION:
+    -------------------------
+    1. Split dialogue into individual turns (lines)
+    2. Encode each turn using SentenceTransformer (all-MiniLM-L6-v2)
+    3. For each consecutive pair (t_i, t_{i+1}), compute cosine similarity
+    4. Average all pairwise similarities
+
+    INTERPRETATION:
+    ---------------
+    - 0.0-0.2: Low coherence - possibly random or unrelated turns
+    - 0.2-0.4: Moderate coherence - typical for diverse topic dialogues
+    - 0.4-0.6: Good coherence - focused task-oriented dialogues
+    - 0.6+: High coherence - very focused single-topic conversations
+
+    WHY WE USE all-MiniLM-L6-v2:
+    ----------------------------
+    - Optimized for semantic similarity tasks
+    - Fast inference (384-dimensional embeddings)
+    - Pre-trained on 1B+ sentence pairs
+    - Good balance of quality and speed
+
+    Args:
+        texts: List of dialogue strings (turns separated by newlines)
+
+    Returns:
+        float: Average coherence score (0.0 to 1.0, higher is better)
+
+    See Also:
+        synwoz.evaluation.metrics.compute_coherence for the module version
+    """
     from sentence_transformers import SentenceTransformer
 
     model = SentenceTransformer('all-MiniLM-L6-v2')
     coherence_scores = []
 
     for text in tqdm(texts, desc="Computing coherence"):
+        # Split dialogue into individual turns
         lines = [l.strip() for l in text.split('\n') if l.strip()]
         if len(lines) < 2:
             continue
 
+        # Encode all turns in the dialogue
         embeddings = model.encode(lines)
+
+        # Compute cosine similarity between consecutive turns
         for i in range(len(embeddings) - 1):
             sim = np.dot(embeddings[i], embeddings[i+1]) / (
                 np.linalg.norm(embeddings[i]) * np.linalg.norm(embeddings[i+1])
